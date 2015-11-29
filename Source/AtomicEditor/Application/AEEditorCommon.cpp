@@ -27,6 +27,10 @@
 #include <AtomicNET/NETScript/NETScript.h>
 #endif
 
+#ifdef ATOMIC_WEBVIEW
+#include <AtomicWebView/WebBrowserHost.h>
+#endif
+
 #include "../Components/EditorComponents.h"
 
 #include "AEEditorCommon.h"
@@ -105,6 +109,12 @@ void AEEditorCommon::Setup()
 #else
 
     env->InitFromPackage();
+
+#endif
+
+#ifdef ATOMIC_WEBVIEW
+
+    context_->RegisterSubsystem(new WebBrowserHost(context_));
 
 #endif
 

@@ -39,3 +39,7 @@ if (MSVC)
     add_subdirectory(libcurl)
     add_subdirectory(MojoShader)
 endif()
+
+if (ATOMIC_WEBVIEW)
+	add_subdirectory(CEF)
+endif()
