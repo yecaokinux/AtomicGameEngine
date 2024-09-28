@@ -37,7 +37,7 @@ namespace AtomicPlayer
 
 class AtomicPlayerApp : public Application
 {
-    OBJECT(AtomicPlayerApp);
+    ATOMIC_OBJECT(AtomicPlayerApp, Application);
 
 public:
     /// Construct.
@@ -64,6 +64,8 @@ private:
     void HandleJSError(StringHash eventType, VariantMap& eventData);
 
     void HandleLogMessage(StringHash eventType, VariantMap& eventData);
+
+    void ReadEngineConfig();
 
 };
 

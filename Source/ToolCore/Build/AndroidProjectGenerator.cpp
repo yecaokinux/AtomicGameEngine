@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Poco/File.h>
@@ -22,8 +37,9 @@
 namespace ToolCore
 {
 
-AndroidProjectGenerator::AndroidProjectGenerator(Context* context) :
-    Object(context)
+AndroidProjectGenerator::AndroidProjectGenerator(Context* context, BuildBase* buildBase) :
+    Object(context),
+    buildBase_(buildBase)
 {
 
 }
@@ -50,6 +66,12 @@ bool AndroidProjectGenerator::Generate()
     if (!GenerateActivitySource())
         return false;
 
+    if (!CopyUserIcons())
+        return false;
+
+    if (!CopyDebugGdbserver())
+        return false;
+
     return true;
 }
 
@@ -63,7 +85,7 @@ bool AndroidProjectGenerator::GenerateActivitySource()
 
     if (!packageName.Length())
     {
-        errorText_ = "Invalid Package Name";
+        errorText_ = "Invalid App Package name. The general naming convention is com.company.appname";
         return false;
     }
 
@@ -78,7 +100,7 @@ bool AndroidProjectGenerator::GenerateActivitySource()
 
     if (!dirs.exists())
     {
-        errorText_ = "Unable to create ";
+        errorText_ = "Project generator unable to create dirs " + path;
         return false;
     }
 
@@ -94,15 +116,17 @@ bool AndroidProjectGenerator::GenerateActivitySource()
     File file(context_, path + "/AtomicGameEngine.java", FILE_WRITE);
 
     if (!file.IsOpen())
+    {
+        errorText_ = "Project generator unable to open file " + path + "/AtomicGameEngine.java";
         return false;
-
+    }
     file.Write(source.CString(), source.Length());
 
     return true;
 
 }
 
-bool AndroidProjectGenerator::GenerateLocalProperties()
+bool AndroidProjectGenerator::GenerateLocalProperties( )
 {
     ToolEnvironment* tenv = GetSubsystem<ToolEnvironment>();
     ToolPrefs* prefs = tenv->GetToolPrefs();
@@ -110,7 +134,7 @@ bool AndroidProjectGenerator::GenerateLocalProperties()
 
     if (!sdkPath.Length())
     {
-        errorText_ = "Invalid Android SDK Path";
+        errorText_ = "Invalid Android SDK Path, select the path in Build Settings.";
         return false;
     }
 
@@ -120,10 +144,35 @@ bool AndroidProjectGenerator::GenerateLocalProperties()
     File file(context_, buildPath_ + "/local.properties", FILE_WRITE);
 
     if (!file.IsOpen())
+    {
+        errorText_ = "Project generator unable to open file " + buildPath_ + "/local.properties ";
         return false;
-
+    }
+    
     file.Write(props.CString(), props.Length());
 
+
+    if ( prefs->GetReleaseCheck() > 2 ) // if release index is set ...
+    {
+        FileSystem* fileSystem = GetSubsystem<FileSystem>();
+        String Reldir = prefs->GetReleasePath();
+        if (!fileSystem->DirExists(Reldir))
+        {
+            errorText_ = "Invalid Release Path, select the path in Build Settings.";
+            return false;
+        }
+        
+        String antname = Reldir + "/ant.properties";
+        if ( !fileSystem->FileExists ( antname) ) 
+        {
+            errorText_ = "The file ant.properties not found in " + Reldir + ", unable to generate Release APK.";
+            return false;
+        }
+
+        if ( !buildBase_->BuildCopyFile ( antname, buildPath_ + "/ant.properties" ))
+            return false;
+
+    }
     return true;
 
 }
@@ -138,7 +187,7 @@ bool AndroidProjectGenerator::GenerateProjectProperties()
 
     if (!apiString.Length())
     {
-        errorText_ = "Invalid Android API";
+        errorText_ = "Invalid Android API level, Press Refresh and select a valid level.";
         return false;
     }
 
@@ -149,8 +198,10 @@ bool AndroidProjectGenerator::GenerateProjectProperties()
     File file(context_, buildPath_ + "/project.properties", FILE_WRITE);
 
     if (!file.IsOpen())
+    {
+        errorText_ = "Project generator unable to open file project.properties in " + buildPath_;
         return false;
-
+    }
     file.Write(props.CString(), props.Length());
 
     return true;
@@ -159,6 +210,7 @@ bool AndroidProjectGenerator::GenerateProjectProperties()
 
 bool AndroidProjectGenerator::GenerateStringXML()
 {
+    FileSystem* fs = GetSubsystem<FileSystem>();
     ToolSystem* toolSystem = GetSubsystem<ToolSystem>();
     Project* project = toolSystem->GetProject();
     AndroidBuildSettings* settings = project->GetBuildSettings()->GetAndroidBuildSettings();
@@ -167,7 +219,7 @@ bool AndroidProjectGenerator::GenerateStringXML()
 
     if (!appName.Length())
     {
-        errorText_ = "Invalid App Name";
+        errorText_ = "Invalid App Name, select the App Name in Build Settings.";
         return false;
     }
 
@@ -178,11 +230,27 @@ bool AndroidProjectGenerator::GenerateStringXML()
     strings.AppendWithFormat("<string name=\"app_name\">%s</string>\n", appName.CString());
 
     strings += "</resources>\n";
-
+    
+    // Create res/values if it doesn't exist
+    if (!fs->DirExists(buildPath_ + "/res/values"))
+    {
+        fs->CreateDirsRecursive(buildPath_ + "/res/values");
+    }
+    
+    // Check that we successfully created it
+    if (!fs->DirExists(buildPath_ + "/res/values"))
+    {
+        errorText_ = "Unable to create directory: " + buildPath_ + "/res/values";
+        return false;
+    }
+    
     File file(context_, buildPath_ + "/res/values/strings.xml", FILE_WRITE);
 
     if (!file.IsOpen())
+    {
+        errorText_ = "Unable to write: " + buildPath_ + "/res/values/strings.xml";
         return false;
+    }
 
     file.Write(strings.CString(), strings.Length());
 
@@ -201,11 +269,11 @@ bool AndroidProjectGenerator::GenerateAndroidManifest()
 
     if (!package.Length())
     {
-        errorText_ = "Invalid Package Name";
+        errorText_ = "Invalid App Package name. The general naming convention is com.company.appname";
         return false;
     }
 
-    // TODO: from settings
+    // TODO: from settings -- should this be ProductName ?
     String activityName = "AtomicGameEngine";
     if (!activityName.Length())
     {
@@ -218,16 +286,22 @@ bool AndroidProjectGenerator::GenerateAndroidManifest()
     manifest.AppendWithFormat("package=\"%s\"\n", package.CString());
     manifest += "android:versionCode=\"1\"\n";
     manifest += "android:versionName=\"1.0\">\n";
+    manifest += "android:installLocation=\"auto\">\n";
 
+    manifest += "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>\n";
     manifest += "<uses-permission android:name=\"android.permission.INTERNET\" />\n";
     manifest += "<uses-feature android:glEsVersion=\"0x00020000\" />\n";
     manifest += "<uses-sdk android:targetSdkVersion=\"12\" android:minSdkVersion=\"10\" />\n";
 
-    manifest += "<application android:label=\"@string/app_name\" android:icon=\"@drawable/icon\">\n";
+    manifest += "<application\n";
+    manifest += "android:label=\"@string/app_name\"\n";
+    manifest += "android:icon=\"@drawable/icon\"\n";
+    manifest += "android:theme=\"@android:style/Theme.NoTitleBar.Fullscreen\"\n";
+    manifest += "android:hardwareAccelerated=\"true\"\n";
+    manifest += "android:allowBackup=\"false\">\n";
+
     manifest.AppendWithFormat("<activity android:name=\".%s\"\n", activityName.CString());
 
-    manifest += "android:label=\"@string/app_name\"\n";
-    manifest += "android:theme=\"@android:style/Theme.NoTitleBar.Fullscreen\"\n";
     manifest += "android:configChanges=\"keyboardHidden|orientation\"\n";
     manifest += "android:screenOrientation=\"landscape\">\n";
     manifest += "<intent-filter>\n";
@@ -236,6 +310,8 @@ bool AndroidProjectGenerator::GenerateAndroidManifest()
     manifest += "</intent-filter>\n";
     manifest += "</activity>\n";
     manifest += "</application>\n";
+
+
     manifest += "</manifest>\n";
 
     File file(context_, buildPath_ + "/AndroidManifest.xml", FILE_WRITE);
@@ -249,8 +325,98 @@ bool AndroidProjectGenerator::GenerateAndroidManifest()
 
 }
 
+bool AndroidProjectGenerator::CopyUserIcons()
+{
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+    ToolSystem* toolSystem = GetSubsystem<ToolSystem>();
+    Project* project = toolSystem->GetProject();
+    AndroidBuildSettings* settings = project->GetBuildSettings()->GetAndroidBuildSettings();
+
+    String userIconPath = settings->GetIconPath();
+    if (!fileSystem->DirExists(userIconPath))               // dont do anything if there is no path defined.
+        return true;
+            
+    String userIconDir = userIconPath + "/drawable";        // 1st target dir 
+    String userIconFile = userIconDir + "/logo_large.png";  // 1st target file
+    String destDir = buildPath_ + "/res/drawable";          // where it should be in the build
+    if ( fileSystem->FileExists (userIconFile) )            // is there a file there?
+    {
+        if ( !buildBase_->BuildCopyFile ( userIconFile, destDir + "/logo_large.png" ))
+            return false;
+    }
+
+    userIconDir = userIconPath + "/drawable-ldpi"; 
+    userIconFile = userIconDir + "/icon.png"; 
+    destDir = buildPath_ + "/res/drawable-ldpi";
+    if ( fileSystem->FileExists (userIconFile) )
+    {
+        if ( !buildBase_->BuildCopyFile ( userIconFile, destDir + "/icon.png"))
+            return false;
+    } 
+
+    userIconDir = userIconPath + "/drawable-mdpi"; 
+    userIconFile = userIconDir + "/icon.png"; 
+    destDir = buildPath_ + "/res/drawable-mdpi";
+    {
+        if ( !buildBase_->BuildCopyFile ( userIconFile, destDir + "/icon.png" ))
+            return false;
+    } 
+
+    userIconDir = userIconPath + "/drawable-hdpi"; 
+    userIconFile = userIconDir + "/icon.png"; 
+    destDir = buildPath_ + "/res/drawable-hdpi";
+    if ( fileSystem->FileExists (userIconFile) )
+    {
+        if ( !buildBase_->BuildCopyFile ( userIconFile, destDir + "/icon.png" ))
+            return false;
+    }
+
+    return true;
 }
 
-/*
+bool AndroidProjectGenerator::CopyDebugGdbserver()
+{
+    ToolEnvironment* tenv = GetSubsystem<ToolEnvironment>();
+    ToolPrefs* prefs = tenv->GetToolPrefs();
 
-*/
+    // include gdbserver in APK
+    if ( prefs->GetReleaseCheck() == 1 || prefs->GetReleaseCheck() == 2 ) 
+    {
+        String ndkPath = prefs->GetNdkPath();    
+        if (ndkPath.Empty())
+        {
+            errorText_ = "NDK path not entered, this is required to add gdbserver to APK";
+            return false;
+        }
+
+        FileSystem* fileSystem = GetSubsystem<FileSystem>();
+        if (!fileSystem->DirExists(ndkPath))
+        {
+            errorText_ = "Invalid NDK Path, can not add gdbserver to APK.";
+            return false;
+        }
+
+        // copy gdbserver file
+        String gsstring = ndkPath + "/prebuilt/android-arm/gdbserver/gdbserver";  // assume arm type abi
+        String destDir = buildPath_ + "/libs/armeabi-v7a"; // assume armeabi-v7a abi type
+        if ( !fileSystem->FileExists (gsstring) )
+        {
+            errorText_ = "gdbserver not found as " + gsstring;
+            return false;
+        }
+        
+        if ( prefs->GetReleaseCheck() == 1 ) // Debug Source with gdbserver
+        {
+            if ( !buildBase_->BuildCopyFile ( gsstring, destDir + "/gdbserver"))
+                return false;
+        } 
+        else if ( prefs->GetReleaseCheck() == 2 ) // Debug Source with libgdbserver.so
+        {
+            if ( !buildBase_->BuildCopyFile ( gsstring, destDir + "/libgdbserver.so"))
+                return false;
+        } 
+    }
+    return true;
+}
+
+}

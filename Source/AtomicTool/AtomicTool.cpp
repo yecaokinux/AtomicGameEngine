@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/ProcessUtils.h>
@@ -19,9 +34,13 @@
 #include <ToolCore/Command/Command.h>
 #include <ToolCore/Command/CommandParser.h>
 
+#include <Atomic/IPC/IPC.h>
+#include <AtomicNET/NETScript/NETScript.h>
+#include <ToolCore/NETTools/AtomicNETService.h>
+
 #include "AtomicTool.h"
 
-DEFINE_APPLICATION_MAIN(AtomicTool::AtomicTool);
+ATOMIC_DEFINE_APPLICATION_MAIN(AtomicTool::AtomicTool);
 
 using namespace ToolCore;
 
@@ -44,38 +63,35 @@ void AtomicTool::Setup()
 {
     const Vector<String>& arguments = GetArguments();
 
-    for (unsigned i = 0; i < arguments.Size(); ++i)
-    {
-        if (arguments[i].Length() > 1)
-        {
-            String argument = arguments[i].ToLower();
-            String value = i + 1 < arguments.Size() ? arguments[i + 1] : String::EMPTY;
-
-            if (argument == "--cli-data-path")
-            {
-                if (!value.Length())
-                    ErrorExit("Unable to parse --cli-data-path");
-
-                cliDataPath_ = AddTrailingSlash(value);
-            }
-            else if (argument == "--activate")
-            {
-                if (!value.Length())
-                    ErrorExit("Unable to parse --activation product key");
-
-                activationKey_ = value;
-            }
-            else if (argument == "--deactivate")
-            {
-                deactivate_ = true;
-            }
-
-        }
-
-    }
+    if (arguments.Contains("-toolbootstrap"))
+        ToolEnvironment::SetBootstrapping();
 
     engineParameters_["Headless"] = true;
     engineParameters_["LogLevel"] = LOG_INFO;
+
+    for (unsigned i = 0; i < arguments.Size(); i++)
+    {
+        if (arguments[i].Length() > 1 && arguments[i][0] == '-')
+        {
+            String argument = arguments[i].Substring(1).ToLower();
+            String value = i + 1 < arguments.Size() ? arguments[i + 1] : String::EMPTY;
+
+            if (argument == "toolbootstrap")
+            {
+                ToolEnvironment::SetBootstrapping();
+            }
+            else if (argument == "loglevel")
+            {
+                engineParameters_["LogLevel"] = Variant(VariantType::VAR_INT, value);
+                i++;
+            }
+            else if (argument == "logname")
+            {
+                engineParameters_["LogName"] = Variant(VariantType::VAR_STRING, value);
+                i++;
+            }
+        }
+    }
 
     // no default resources, AtomicTool may be run outside of source tree
     engineParameters_["ResourcePaths"] = "";
@@ -131,7 +147,7 @@ void AtomicTool::HandleLicenseActivationError(StringHash eventType, VariantMap& 
 
 void AtomicTool::HandleLicenseActivationSuccess(StringHash eventType, VariantMap& eventData)
 {
-    LOGRAW("\nActivation successful, thank you!\n\n");
+    ATOMIC_LOGRAW("\nActivation successful, thank you!\n\n");
     GetSubsystem<Engine>()->Exit();
 }
 
@@ -139,18 +155,10 @@ void AtomicTool::DoActivation()
 {
     LicenseSystem* licenseSystem = GetSubsystem<LicenseSystem>();
 
-    if (!licenseSystem->ValidateKey(activationKey_))
-    {
-        ErrorExit(ToString("\nProduct key \"%s\" is invalid, keys are in the form ATOMIC-XXXX-XXXX-XXXX-XXXX\n", activationKey_.CString()));
-        return;
-    }
-
     licenseSystem->LicenseAgreementConfirmed();
 
-    SubscribeToEvent(E_LICENSE_ACTIVATIONERROR, HANDLER(AtomicTool, HandleLicenseActivationError));
-    SubscribeToEvent(E_LICENSE_ACTIVATIONSUCCESS, HANDLER(AtomicTool, HandleLicenseActivationSuccess));
-
-    licenseSystem->RequestServerActivation(activationKey_);
+    SubscribeToEvent(E_LICENSE_ACTIVATIONERROR, ATOMIC_HANDLER(AtomicTool, HandleLicenseActivationError));
+    SubscribeToEvent(E_LICENSE_ACTIVATIONSUCCESS, ATOMIC_HANDLER(AtomicTool, HandleLicenseActivationSuccess));
 
 }
 
@@ -162,40 +170,24 @@ void AtomicTool::HandleLicenseDeactivationError(StringHash eventType, VariantMap
 
 void AtomicTool::HandleLicenseDeactivationSuccess(StringHash eventType, VariantMap& eventData)
 {
-    LOGRAW("\nDeactivation successful\n\n");
+    ATOMIC_LOGRAW("\nDeactivation successful\n\n");
     GetSubsystem<Engine>()->Exit();
 }
 
 void AtomicTool::DoDeactivation()
 {
-    LicenseSystem* licenseSystem = GetSubsystem<LicenseSystem>();
-
-    if (!licenseSystem->LoadLicense())
-    {
-        ErrorExit("\nNot activated");
-        return;
-    }
-
-    if (!licenseSystem->Deactivate())
-    {
-        ErrorExit("\nNot activated\n");
-        return;
-    }
-
-    SubscribeToEvent(E_LICENSE_DEACTIVATIONERROR, HANDLER(AtomicTool, HandleLicenseDeactivationError));
-    SubscribeToEvent(E_LICENSE_DEACTIVATIONSUCCESS, HANDLER(AtomicTool, HandleLicenseDeactivationSuccess));
 }
 
 void AtomicTool::Start()
 {
     // Subscribe to events
-    SubscribeToEvent(E_COMMANDERROR, HANDLER(AtomicTool, HandleCommandError));
-    SubscribeToEvent(E_COMMANDFINISHED, HANDLER(AtomicTool, HandleCommandFinished));
+    SubscribeToEvent(E_COMMANDERROR, ATOMIC_HANDLER(AtomicTool, HandleCommandError));
+    SubscribeToEvent(E_COMMANDFINISHED, ATOMIC_HANDLER(AtomicTool, HandleCommandFinished));
 
-    SubscribeToEvent(E_LICENSE_EULAREQUIRED, HANDLER(AtomicTool, HandleLicenseEulaRequired));
-    SubscribeToEvent(E_LICENSE_ACTIVATIONREQUIRED, HANDLER(AtomicTool, HandleLicenseActivationRequired));
-    SubscribeToEvent(E_LICENSE_ERROR, HANDLER(AtomicTool, HandleLicenseError));
-    SubscribeToEvent(E_LICENSE_SUCCESS, HANDLER(AtomicTool, HandleLicenseSuccess));
+    SubscribeToEvent(E_LICENSE_EULAREQUIRED, ATOMIC_HANDLER(AtomicTool, HandleLicenseEulaRequired));
+    SubscribeToEvent(E_LICENSE_ACTIVATIONREQUIRED, ATOMIC_HANDLER(AtomicTool, HandleLicenseActivationRequired));
+    SubscribeToEvent(E_LICENSE_ERROR, ATOMIC_HANDLER(AtomicTool, HandleLicenseError));
+    SubscribeToEvent(E_LICENSE_SUCCESS, ATOMIC_HANDLER(AtomicTool, HandleLicenseSuccess));
 
     const Vector<String>& arguments = GetArguments();
 
@@ -205,24 +197,12 @@ void AtomicTool::Start()
     ToolEnvironment* env = new ToolEnvironment(context_);
     context_->RegisterSubsystem(env);
 
-//#ifdef ATOMIC_DEV_BUILD
-
-    if (!env->InitFromJSON())
+    // Initialize the ToolEnvironment
+    if (!env->Initialize(true))
     {
-        ErrorExit(ToString("Unable to initialize tool environment from %s", env->GetDevConfigFilename().CString()));
+        ErrorExit("Unable to initialize tool environment");
         return;
     }
-
-    if (!cliDataPath_.Length())
-    {
-        cliDataPath_ = env->GetRootSourceDir() + "/Resources/";
-    }
-
-//#endif
-
-    tsystem->SetCLI();
-    tsystem->SetDataPath(cliDataPath_);
-
 
     if (activationKey_.Length())
     {
@@ -252,35 +232,19 @@ void AtomicTool::Start()
 
     if (cmd->RequiresProjectLoad())
     {
-        FileSystem* fileSystem = GetSubsystem<FileSystem>();
-
-        String projectDirectory = fileSystem->GetCurrentDir();
-
-        Vector<String> projectFiles;
-        fileSystem->ScanDir(projectFiles, projectDirectory, "*.atomic", SCAN_FILES, false);
-        if (!projectFiles.Size())
+        if (!cmd->LoadProject())
         {
-            ErrorExit(ToString("No .atomic project file in %s", projectDirectory.CString()));
-            return;
-        }
-        else if (projectFiles.Size() > 1)
-        {
-            ErrorExit(ToString("Multiple .atomic project files found in %s", projectDirectory.CString()));
+            ErrorExit(ToString("Failed to load project: %s", cmd->GetProjectPath().CString()));
             return;
         }
 
-        String projectFile = projectDirectory + "/" + projectFiles[0];
-
-        if (!tsystem->LoadProject(projectFile))
-        {
-            //ErrorExit(ToString("Failed to load project: %s", projectFile.CString()));
-            //return;
-        }
+        String projectPath = cmd->GetProjectPath();
 
         // Set the build path
-        String buildFolder = projectDirectory + "/" + "Build";
+        String buildFolder = projectPath + "/" + "Build";
         buildSystem->SetBuildPath(buildFolder);
 
+        FileSystem* fileSystem = GetSubsystem<FileSystem>();
         if (!fileSystem->DirExists(buildFolder))
         {
             fileSystem->CreateDir(buildFolder);
@@ -292,6 +256,22 @@ void AtomicTool::Start()
             }
         }
 
+    }
+
+    if (cmd->RequiresNETService())
+    {
+        context_->RegisterSubsystem(new IPC(context_));
+        RegisterNETScriptLibrary(context_);
+        SharedPtr<AtomicNETService> netService(new AtomicNETService(context_));
+
+        if (!netService->Start())
+        {
+            netService = nullptr;
+            ErrorExit(ToString("Unable to start AtomicNETService"));
+            return;
+        }
+
+        context_->RegisterSubsystem(netService);
     }
 
     command_ = cmd;
@@ -317,7 +297,11 @@ void AtomicTool::Start()
 
 void AtomicTool::Stop()
 {
-
+    IPC* ipc = GetSubsystem<IPC>();
+    if (ipc)
+    {
+        ipc->Shutdown();
+    }
 }
 
 void AtomicTool::ErrorExit(const String& message)

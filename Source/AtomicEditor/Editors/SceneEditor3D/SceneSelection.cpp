@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 
@@ -12,7 +27,7 @@
 #include <Atomic/Graphics/Graphics.h>
 #include <Atomic/Graphics/Drawable.h>
 #include <Atomic/Graphics/DebugRenderer.h>
-#include <Atomic/Atomic3D/Terrain.h>
+#include <Atomic/Graphics/Terrain.h>
 
 #include <Atomic/Scene/SceneEvents.h>
 #include <Atomic/Scene/Node.h>
@@ -27,17 +42,21 @@
 namespace AtomicEditor
 {
 
-SceneSelection::SceneSelection(Context* context, SceneEditor3D *sceneEditor) : Object(context)
+SceneSelection::SceneSelection(Context* context, SceneEditor3D *sceneEditor) : Object(context), hasCopied_(false)
 {
     sceneEditor3D_ = sceneEditor;
     scene_ = sceneEditor3D_->GetScene();
 
-    SubscribeToEvent(E_POSTRENDERUPDATE, HANDLER(SceneSelection, HandlePostRenderUpdate));
-    SubscribeToEvent(scene_, E_NODEREMOVED, HANDLER(SceneSelection, HandleNodeRemoved));
+    SubscribeToEvent(E_POSTRENDERUPDATE, ATOMIC_HANDLER(SceneSelection, HandlePostRenderUpdate));
+    SubscribeToEvent(scene_, E_NODEREMOVED, ATOMIC_HANDLER(SceneSelection, HandleNodeRemoved));
 
-    SubscribeToEvent(scene_, E_SCENEEDITPREFABSAVE, HANDLER(SceneSelection, HandleSceneEditPrefabSave));
-    SubscribeToEvent(scene_, E_SCENEEDITPREFABREVERT, HANDLER(SceneSelection, HandleSceneEditPrefabRevert));
-    SubscribeToEvent(scene_, E_SCENEEDITPREFABBREAK, HANDLER(SceneSelection, HandleSceneEditPrefabBreak));
+    SubscribeToEvent(scene_, E_SCENEEDITPREFABSAVE, ATOMIC_HANDLER(SceneSelection, HandleSceneEditPrefabSave));
+    SubscribeToEvent(scene_, E_SCENEEDITPREFABREVERT, ATOMIC_HANDLER(SceneSelection, HandleSceneEditPrefabRevert));
+    SubscribeToEvent(scene_, E_SCENEEDITPREFABBREAK, ATOMIC_HANDLER(SceneSelection, HandleSceneEditPrefabBreak));
+    SubscribeToEvent(scene_, E_SCENEEDITPREFABCOPY, ATOMIC_HANDLER(SceneSelection, HandleSceneEditPrefabCopy));
+    SubscribeToEvent(scene_, E_SCENEEDITPREFABPASTE, ATOMIC_HANDLER(SceneSelection, HandleSceneEditPrefabPaste));
+    SubscribeToEvent(scene_, E_SCENEEDITCOMPONENTCOPY, ATOMIC_HANDLER(SceneSelection, HandleSceneEditComponentCopy));
+    SubscribeToEvent(scene_, E_SCENEEDITCOMPONENTPASTE, ATOMIC_HANDLER(SceneSelection, HandleSceneEditComponentPaste));
 }
 
 SceneSelection::~SceneSelection()
@@ -47,7 +66,7 @@ SceneSelection::~SceneSelection()
 
 Node* SceneSelection::GetSelectedNode(unsigned index) const
 {
-    if (index > nodes_.Size())
+    if (index >= nodes_.Size())
         return 0;
 
     return nodes_[index];
@@ -78,7 +97,7 @@ void SceneSelection::AddNode(Node* node, bool clear)
 }
 
 void SceneSelection::RemoveNode(Node* node, bool quiet)
-{    
+{
     SharedPtr<Node> _node(node);
     if(!nodes_.Contains(_node))
         return;
@@ -88,7 +107,7 @@ void SceneSelection::RemoveNode(Node* node, bool quiet)
     VariantMap eventData;
     eventData[SceneNodeSelected::P_SCENE] = scene_;
     eventData[SceneNodeSelected::P_NODE] = node;
-    eventData[SceneNodeSelected::P_SELECTED] = false;    
+    eventData[SceneNodeSelected::P_SELECTED] = false;
     eventData[SceneNodeSelected::P_QUIET] = quiet;
     scene_->SendEvent(E_SCENENODESELECTED, eventData);
 
@@ -180,7 +199,7 @@ void SceneSelection::Copy()
         if (!node->GetParent())
         {
             clipBoardNodes_.Clear();
-            LOGERROR("SceneSelection::Copy - unable to copy node to clipboard (no parent)");
+            ATOMIC_LOGERROR("SceneSelection::Copy - unable to copy node to clipboard (no parent)");
             return;
         }
 
@@ -202,7 +221,7 @@ void SceneSelection::Copy()
         if (node)
         {
             Matrix3x4 transform = node->GetWorldTransform();
-            SharedPtr<Node> clipNode(node->Clone());            
+            SharedPtr<Node> clipNode(node->Clone());
             clipNode->Remove();
             clipNode->SetWorldTransform(transform.Translation(), transform.Rotation(), transform.Scale());
             clipBoardNodes_.Push(clipNode);
@@ -322,7 +341,7 @@ void SceneSelection::HandleSceneEditPrefabSave(StringHash eventType, VariantMap&
     PrefabComponent* prefab = node->GetComponent<PrefabComponent>();
     if (!prefab)
     {
-        LOGERRORF("Prefab Save: Unable to get prefab component for node: %s", node->GetName().CString());
+        ATOMIC_LOGERRORF("Prefab Save: Unable to get prefab component for node: %s", node->GetName().CString());
         return;
     }
 
@@ -338,7 +357,7 @@ void SceneSelection::HandleSceneEditPrefabRevert(StringHash eventType, VariantMa
     PrefabComponent* prefab = node->GetComponent<PrefabComponent>();
     if (!prefab)
     {
-        LOGERRORF("Prefab Revert: Unable to get prefab component for node: %s", node->GetName().CString());
+        ATOMIC_LOGERRORF("Prefab Revert: Unable to get prefab component for node: %s", node->GetName().CString());
         return;
     }
 
@@ -354,7 +373,7 @@ void SceneSelection::HandleSceneEditPrefabBreak(StringHash eventType, VariantMap
     PrefabComponent* prefab = node->GetComponent<PrefabComponent>();
     if (!prefab)
     {
-        LOGERRORF("Prefab Break: Unable to get prefab component for node: %s", node->GetName().CString());
+        ATOMIC_LOGERRORF("Prefab Break: Unable to get prefab component for node: %s", node->GetName().CString());
         return;
     }
 
@@ -377,6 +396,94 @@ void SceneSelection::HandleSceneEditPrefabBreak(StringHash eventType, VariantMap
 
     scene_->SendEvent(E_SCENEEDITSCENEMODIFIED);
 
+}
+
+void SceneSelection::HandleSceneEditPrefabCopy(StringHash eventType, VariantMap & eventData)
+{
+    Node* node = static_cast<Node*> (eventData[SceneEditPrefabCopy::P_NODE].GetPtr());
+
+    PrefabComponent* prefab = node->GetComponent<PrefabComponent>();
+    if (!prefab)
+    {
+        ATOMIC_LOGERRORF("Prefab Copy: Unable to get prefab component for node: %s", node->GetName().CString());
+        return;
+    }
+
+    nodePosition_ = node->GetAttribute("Position").GetVector3();
+    nodeRotation_ = node->GetAttribute("Rotation").GetQuaternion();
+    nodeScale_ = node->GetAttribute("Scale").GetVector3();
+}
+
+void SceneSelection::HandleSceneEditPrefabPaste(StringHash eventType, VariantMap & eventData)
+{
+    Node* node = static_cast<Node*> (eventData[SceneEditPrefabPaste::P_NODE].GetPtr());
+
+    PrefabComponent* prefab = node->GetComponent<PrefabComponent>();
+    if (!prefab)
+    {
+        ATOMIC_LOGERRORF("Prefab Paste: Unable to get prefab component for node: %s", node->GetName().CString());
+        return;
+    }
+
+    node->SetPosition(nodePosition_);
+    node->SetRotation(nodeRotation_);
+    node->SetScale(nodeScale_);
+}
+
+void SceneSelection::HandleSceneEditComponentCopy(StringHash eventType, VariantMap & eventData)
+{
+    Component* component = static_cast<Component*> (eventData[SceneEditComponentCopy::P_COMPONENT].GetPtr());
+    copiedComponent_ = component;
+
+    if (!component)
+    {
+        ATOMIC_LOGERRORF("Component Copy: Unable to copy component from node: %s", component->GetAttribute("type").ToString().CString());
+        return;
+    }
+
+    componentAttributeNames_.Clear();
+    componentAttributeValues_.Clear();
+
+    for (unsigned i = 0; i < component->GetAttributes()->Size(); i++)
+    {
+        String attributeName = component->GetAttributes()->At(i).name_;
+        Variant attributeValue = component->GetAttribute(attributeName);
+        componentAttributeNames_.Push(attributeName);
+        componentAttributeValues_.Push(attributeValue);
+    }
+
+    hasCopied_ = true;
+
+}
+
+void SceneSelection::HandleSceneEditComponentPaste(StringHash eventType, VariantMap & eventData)
+{
+    Component* component = static_cast<Component*> (eventData[SceneEditComponentCopy::P_COMPONENT].GetPtr());
+
+    if (!component)
+    {
+        ATOMIC_LOGERRORF("Component Paste: Unable to paste component to node: %s", component->GetAttribute("type").ToString().CString());
+        return;
+    }
+
+    if (!hasCopied_)
+    {
+        ATOMIC_LOGERROR("Component Paste: Unable to paste, no information has been copied.");
+        return;
+    }
+
+    if (copiedComponent_->GetType() != component->GetType())
+    {
+        ATOMIC_LOGERROR("Component Paste: Unable to paste, component type differ.");
+        return;
+    }
+
+    for (unsigned i = 0; i < componentAttributeNames_.Size(); i++)
+    {
+        String attrName = componentAttributeNames_[i];
+        Variant attrValue = componentAttributeValues_[i];
+        component->SetAttribute(attrName, attrValue);
+    }
 }
 
 

@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
@@ -24,17 +39,14 @@ namespace ToolCore
 
 class ToolEnvironment : public Object
 {
-    OBJECT(ToolEnvironment)
+    ATOMIC_OBJECT(ToolEnvironment, Object)
 
 public:
 
     ToolEnvironment(Context* context);
     virtual ~ToolEnvironment();
 
-    bool InitFromPackage();
-
-    // dev build init env from json
-    bool InitFromJSON(bool atomicTool = false);
+    bool Initialize(bool cli = false);
 
     /// Root source and build directories for development source tree builds
     void SetRootSourceDir(const String& sourceDir);
@@ -57,18 +69,20 @@ public:
     const String& GetPlayerDataDir() { return resourcePlayerDataDir_; }
     const String& GetEditorDataDir() { return resourceEditorDataDir_; }
 
-    /// AtomicNET
-    const String& GetNETCoreCLRAbsPath() { return netCoreCLRAbsPath_; }
-    const String& GetNETAssemblyLoadPaths() { return netAssemblyLoadPaths_; }
-    const String& GetNETTPAPaths() { return netTPAPaths_; }
-    const String& GetAtomicNETEngineAssemblyPath() { return netAtomicNETEngineAssemblyPath_; }
-
     /// Data directories
     const String& GetDeploymentDataDir() { return toolBinary_; }
 
     const String& GetToolDataDir() { return toolDataDir_; }
 
-    const String& GetDevConfigFilename();
+    // Returns true if we running from a command line tool (aka: AtomicTool)
+    bool GetCLI() { return cli_; }
+
+    // AtomicNET
+
+    const String& GetAtomicNETRootDir() { return atomicNETRootDir_; }
+    const String& GetAtomicNETCoreAssemblyDir() { return atomicNETCoreAssemblyDir_; }
+    const String& GetAtomicNETNuGetBinary() { return atomicNETNuGetBinary_; }
+    const String& GetMonoExecutableDir() { return monoExecutableDir_; }
 
     // OSX
     const String& GetPlayerAppFolder() { return playerAppFolder_; }
@@ -78,7 +92,14 @@ public:
 
     void Dump();
 
+    static void SetBootstrapping() { bootstrapping_ = true; }
+
 private:
+
+    bool InitFromDistribution();
+
+    // Whether we are running from a command line tool, such as AtomicTool
+    bool cli_;
 
     // root source directory (for development builds)
     String rootSourceDir_;
@@ -99,12 +120,6 @@ private:
     String toolBinary_;
 
     String toolDataDir_;
-
-    // AtomicNET
-    String netCoreCLRAbsPath_;
-    String netAssemblyLoadPaths_;
-    String netTPAPaths_;
-    String netAtomicNETEngineAssemblyPath_;
 
     // resources
     String resourceCoreDataDir_;
@@ -127,9 +142,15 @@ private:
     String iosBuildDir_;
     String webBuildDir_;
 
-    String devConfigFilename_;
+    // AtomicNET
+    String atomicNETRootDir_;
+    String atomicNETCoreAssemblyDir_;
+    String atomicNETNuGetBinary_;
+    String monoExecutableDir_;
 
     SharedPtr<ToolPrefs> toolPrefs_;
+
+    static bool bootstrapping_;
 };
 
 }

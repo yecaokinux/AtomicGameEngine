@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -71,7 +71,15 @@ bool ValueAnimationInfo::Update(float timeStep)
     if (!animation_ || !target_)
         return true;
 
-    currentTime_ += timeStep * speed_;
+    return SetTime(currentTime_ + timeStep * speed_);
+}
+
+bool ValueAnimationInfo::SetTime(float time)
+{
+    if (!animation_ || !target_)
+        return true;
+
+    currentTime_ = time;
 
     if (!animation_->IsValid())
         return true;
@@ -90,8 +98,19 @@ bool ValueAnimationInfo::Update(float timeStep)
         PODVector<const VAnimEventFrame*> eventFrames;
         GetEventFrames(lastScaledTime_, scaledTime, eventFrames);
 
-        for (unsigned i = 0; i < eventFrames.Size(); ++i)
-            target_->SendEvent(eventFrames[i]->eventType_, const_cast<VariantMap&>(eventFrames[i]->eventData_));
+        if (eventFrames.Size())
+        {
+            // Make a copy of the target weakptr, since if it expires, the AnimationInfo is deleted as well, in which case the
+            // member variable cannot be accessed
+            WeakPtr<Object> targetWeak(target_);
+
+            for (unsigned i = 0; i < eventFrames.Size(); ++i)
+                target_->SendEvent(eventFrames[i]->eventType_, const_cast<VariantMap&>(eventFrames[i]->eventData_));
+
+            // Break immediately if target expired due to event
+            if (targetWeak.Expired())
+                return true;
+        }
     }
 
     lastScaledTime_ = scaledTime;
@@ -132,7 +151,7 @@ float ValueAnimationInfo::CalculateScaledTime(float currentTime, bool& finished)
         return Clamp(currentTime, beginTime, endTime);
 
     default:
-        LOGERROR("Unsupported attribute animation wrap mode");
+        ATOMIC_LOGERROR("Unsupported attribute animation wrap mode");
         return beginTime;
     }
 }
@@ -142,7 +161,8 @@ void ValueAnimationInfo::GetEventFrames(float beginTime, float endTime, PODVecto
     switch (wrapMode_)
     {
     case WM_LOOP:
-        if (beginTime < endTime)
+        /// \todo This can miss an event if the deltatime is exactly the animation's length
+        if (beginTime <= endTime)
             animation_->GetEventFrames(beginTime, endTime, eventFrames);
         else
         {

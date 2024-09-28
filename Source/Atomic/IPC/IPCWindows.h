@@ -32,6 +32,8 @@
 namespace Atomic
 {
 
+#define ATOMIC_WINDOWS_IPC_BUFFER_SIZE 1048576
+
 class PipePair {
 
 public:
@@ -75,7 +77,7 @@ private:
 
         ReaderThread(PipeWin* pipeWin) : pipeWin_(pipeWin), readSize_(0)
         {
-            buf_.Resize(4096);
+            buf_.Resize(ATOMIC_WINDOWS_IPC_BUFFER_SIZE);
         }
 
         void Kill();
@@ -97,7 +99,8 @@ private:
 
 class PipeTransport : public PipeWin {
 public:
-    static const size_t kBufferSz = 4096;
+
+    static const size_t kBufferSz = ATOMIC_WINDOWS_IPC_BUFFER_SIZE;
 
     bool Send(const void* buf, size_t sz) {
         return Write(buf, sz);
@@ -109,17 +112,19 @@ private:
     PODVector<char> buf_;
 };
 
-class IPCProcess : public Object
+class ATOMIC_API IPCProcess : public Object
 {
-    OBJECT(IPCProcess)
+    ATOMIC_OBJECT(IPCProcess, Object)
 
     public:
 
-        IPCProcess(Context* context, IPCHandle clientRead, IPCHandle clientWrite, IPCHandle pid = INVALID_IPCHANDLE_VALUE);
+    IPCProcess(Context* context, IPCHandle clientRead, IPCHandle clientWrite, IPCHandle pid = INVALID_IPCHANDLE_VALUE);
 
     virtual ~IPCProcess();
 
     bool IsRunning();
+
+    bool Terminate();
 
     IPCHandle clientRead() const { return clientRead_; }
     IPCHandle clientWrite() const { return clientWrite_; }
@@ -130,7 +135,7 @@ private:
 
     IPCHandle pid_;
     IPCHandle clientRead_;
-    IPCHandle clientWrite_;
+    IPCHandle clientWrite_;    
 };
 
 }

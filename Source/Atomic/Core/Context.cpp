@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,82 @@
 #include "../Precompiled.h"
 
 #include "../Core/Context.h"
-#include "../Core/Thread.h"
+// ATOMIC BEGIN
+#include "../Core/Profiler.h"
+// ATOMIC END
+#include "../IO/Log.h"
+
+#ifndef MINI_URHO
+#include <SDL.h>
+#ifdef ATOMIC_IK
+#include <ik/log.h>
+#include <ik/memory.h>
+#endif
+#endif
 
 #include "../DebugNew.h"
 
 namespace Atomic
 {
+
+#ifndef MINI_URHO
+// Keeps track of how many times SDL was initialised so we know when to call SDL_Quit().
+static int sdlInitCounter = 0;
+
+// Keeps track of how many times IK was initialised
+static int ikInitCounter = 0;
+
+// Reroute all messages from the ik library to the Atomic log
+static void HandleIKLog(const char* msg)
+{
+    ATOMIC_LOGINFOF("[IK] %s", msg);
+}
+#endif
+
+
+void EventReceiverGroup::BeginSendEvent()
+{
+    ++inSend_;
+}
+
+void EventReceiverGroup::EndSendEvent()
+{
+    assert(inSend_ > 0);
+    --inSend_;
+
+    if (inSend_ == 0 && dirty_)
+    {
+        /// \todo Could be optimized by erase-swap, but this keeps the receiver order
+        for (unsigned i = receivers_.Size() - 1; i < receivers_.Size(); --i)
+        {
+            if (!receivers_[i])
+                receivers_.Erase(i);
+        }
+
+        dirty_ = false;
+    }
+}
+
+void EventReceiverGroup::Add(Object* object)
+{
+    if (object)
+        receivers_.Push(object);
+}
+
+void EventReceiverGroup::Remove(Object* object)
+{
+    if (inSend_ > 0)
+    {
+        PODVector<Object*>::Iterator i = receivers_.Find(object);
+        if (i != receivers_.End())
+        {
+            (*i) = 0;
+            dirty_ = true;
+        }
+    }
+    else
+        receivers_.Remove(object);
+}
 
 void RemoveNamedAttribute(HashMap<StringHash, Vector<AttributeInfo> >& attributes, StringHash objectType, const char* name)
 {
@@ -54,9 +124,11 @@ void RemoveNamedAttribute(HashMap<StringHash, Vector<AttributeInfo> >& attribute
 
 Context::Context() :
     eventHandler_(0),
+// ATOMIC BEGIN
     editorContext_(false)
+// ATOMIC END
 {
-#ifdef ANDROID
+#ifdef __ANDROID__
     // Always reset the random seed on Android, as the Urho3D library might not be unloaded between runs
     SetRandomSeed(1);
 #endif
@@ -84,6 +156,7 @@ Context::~Context()
     eventDataMaps_.Clear();
 }
 
+// ATOMIC BEGIN
 SharedPtr<Object> Context::CreateObject(StringHash objectType, const XMLElement& source)
 {
     HashMap<StringHash, SharedPtr<ObjectFactory> >::ConstIterator i = factories_.Find(objectType);
@@ -92,6 +165,7 @@ SharedPtr<Object> Context::CreateObject(StringHash objectType, const XMLElement&
     else
         return SharedPtr<Object>();
 }
+// ATOMIC END
 
 void Context::RegisterFactory(ObjectFactory* factory)
 {
@@ -130,7 +204,11 @@ void Context::RegisterAttribute(StringHash objectType, const AttributeInfo& attr
 {
     // None or pointer types can not be supported
     if (attr.type_ == VAR_NONE || attr.type_ == VAR_VOIDPTR || attr.type_ == VAR_PTR)
+    {
+        ATOMIC_LOGWARNING("Attempt to register unsupported attribute type " + Variant::GetTypeName(attr.type_) + " to class " +
+            GetTypeName(objectType));
         return;
+    }
 
     attributes_[objectType].Push(attr);
 
@@ -162,9 +240,95 @@ VariantMap& Context::GetEventDataMap()
     return ret;
 }
 
+#ifndef MINI_URHO
+bool Context::RequireSDL(unsigned int sdlFlags)
+{
+    // Always increment, the caller must match with ReleaseSDL(), regardless of
+    // what happens.
+    ++sdlInitCounter;
+
+    // Need to call SDL_Init() at least once before SDL_InitSubsystem()
+    if (sdlInitCounter == 1)
+    {
+        ATOMIC_LOGDEBUG("Initialising SDL");
+        if (SDL_Init(0) != 0)
+        {
+            ATOMIC_LOGERRORF("Failed to initialise SDL: %s", SDL_GetError());
+            return false;
+        }
+    }
+
+    Uint32 remainingFlags = sdlFlags & ~SDL_WasInit(0);
+    if (remainingFlags != 0)
+    {
+        if (SDL_InitSubSystem(remainingFlags) != 0)
+        {
+            ATOMIC_LOGERRORF("Failed to initialise SDL subsystem: %s", SDL_GetError());
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void Context::ReleaseSDL()
+{
+    --sdlInitCounter;
+
+    if (sdlInitCounter == 0)
+    {
+        ATOMIC_LOGDEBUG("Quitting SDL");
+        SDL_QuitSubSystem(SDL_INIT_EVERYTHING);
+        SDL_Quit();
+    }
+
+    if (sdlInitCounter < 0)
+        ATOMIC_LOGERROR("Too many calls to Context::ReleaseSDL()!");
+}
+
+#ifdef ATOMIC_IK
+void Context::RequireIK()
+{
+    // Always increment, the caller must match with ReleaseSDL(), regardless of
+    // what happens.
+    ++ikInitCounter;
+
+    if (ikInitCounter == 1)
+    {
+        ATOMIC_LOGDEBUG("Initialising Inverse Kinematics library");
+        ik_memory_init();
+        ik_log_init(IK_LOG_NONE);
+        ik_log_register_listener(HandleIKLog);
+    }
+}
+
+void Context::ReleaseIK()
+{
+    --ikInitCounter;
+
+    if (ikInitCounter == 0)
+    {
+        ATOMIC_LOGDEBUG("De-initialising Inverse Kinematics library");
+        ik_log_unregister_listener(HandleIKLog);
+        ik_log_deinit();
+        ik_memory_deinit();
+    }
+
+    if (ikInitCounter < 0)
+        ATOMIC_LOGERROR("Too many calls to Context::ReleaseIK()");
+}
+#endif // ifdef URHO3D_IK
+#endif // ifndef MINI_URHO
 
 void Context::CopyBaseAttributes(StringHash baseType, StringHash derivedType)
 {
+    // Prevent endless loop if mistakenly copying attributes from same class as derived
+    if (baseType == derivedType)
+    {
+        ATOMIC_LOGWARNING("Attempt to copy base attributes to itself for class " + GetTypeName(baseType));
+        return;
+    }
+
     const Vector<AttributeInfo>* baseAttributes = GetAttributes(baseType);
     if (baseAttributes)
     {
@@ -187,6 +351,17 @@ Object* Context::GetSubsystem(StringHash type) const
         return 0;
 }
 
+const Variant& Context::GetGlobalVar(StringHash key) const
+{
+    VariantMap::ConstIterator i = globalVars_.Find(key);
+    return i != globalVars_.End() ? i->second_ : Variant::EMPTY;
+}
+
+void Context::SetGlobalVar(StringHash key, const Variant& value)
+{
+    globalVars_[key] = value;
+}
+
 Object* Context::GetEventSender() const
 {
     if (!eventSenders_.Empty())
@@ -197,9 +372,13 @@ Object* Context::GetEventSender() const
 
 const String& Context::GetTypeName(StringHash objectType) const
 {
+    // ATOMIC BEGIN
+
     // Search factories to find the hash-to-name mapping
     HashMap<StringHash, SharedPtr<ObjectFactory> >::ConstIterator i = factories_.Find(objectType);
-    return i != factories_.End() ? i->second_->GetTypeName() : String::EMPTY;
+    return i != factories_.End() ? i->second_->GetFactoryTypeName() : String::EMPTY;
+    
+    // ATOMIC END
 }
 
 AttributeInfo* Context::GetAttribute(StringHash objectType, const char* name)
@@ -221,23 +400,33 @@ AttributeInfo* Context::GetAttribute(StringHash objectType, const char* name)
 
 void Context::AddEventReceiver(Object* receiver, StringHash eventType)
 {
-    eventReceivers_[eventType].Insert(receiver);
+    SharedPtr<EventReceiverGroup>& group = eventReceivers_[eventType];
+    if (!group)
+        group = new EventReceiverGroup();
+    group->Add(receiver);
 }
 
 void Context::AddEventReceiver(Object* receiver, Object* sender, StringHash eventType)
 {
-    specificEventReceivers_[sender][eventType].Insert(receiver);
+    SharedPtr<EventReceiverGroup>& group = specificEventReceivers_[sender][eventType];
+    if (!group)
+        group = new EventReceiverGroup();
+    group->Add(receiver);
 }
 
 void Context::RemoveEventSender(Object* sender)
 {
-    HashMap<Object*, HashMap<StringHash, HashSet<Object*> > >::Iterator i = specificEventReceivers_.Find(sender);
+    HashMap<Object*, HashMap<StringHash, SharedPtr<EventReceiverGroup> > >::Iterator i = specificEventReceivers_.Find(sender);
     if (i != specificEventReceivers_.End())
     {
-        for (HashMap<StringHash, HashSet<Object*> >::Iterator j = i->second_.Begin(); j != i->second_.End(); ++j)
+        for (HashMap<StringHash, SharedPtr<EventReceiverGroup> >::Iterator j = i->second_.Begin(); j != i->second_.End(); ++j)
         {
-            for (HashSet<Object*>::Iterator k = j->second_.Begin(); k != j->second_.End(); ++k)
-                (*k)->RemoveEventSender(sender);
+            for (PODVector<Object*>::Iterator k = j->second_->receivers_.Begin(); k != j->second_->receivers_.End(); ++k)
+            {
+                Object* receiver = *k;
+                if (receiver)
+                    receiver->RemoveEventSender(sender);
+            }
         }
         specificEventReceivers_.Erase(i);
     }
@@ -245,16 +434,26 @@ void Context::RemoveEventSender(Object* sender)
 
 void Context::RemoveEventReceiver(Object* receiver, StringHash eventType)
 {
-    HashSet<Object*>* group = GetEventReceivers(eventType);
+    EventReceiverGroup* group = GetEventReceivers(eventType);
     if (group)
-        group->Erase(receiver);
+        group->Remove(receiver);
 }
 
 void Context::RemoveEventReceiver(Object* receiver, Object* sender, StringHash eventType)
 {
-    HashSet<Object*>* group = GetEventReceivers(sender, eventType);
+    EventReceiverGroup* group = GetEventReceivers(sender, eventType);
     if (group)
-        group->Erase(receiver);
+        group->Remove(receiver);
+}
+
+void Context::BeginSendEvent(Object* sender, StringHash eventType)
+{
+    eventSenders_.Push(sender);
+}
+
+void Context::EndSendEvent()
+{
+    eventSenders_.Pop();
 }
 
 }

@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/Log.h>
@@ -26,6 +41,9 @@
 #include "TMXImporter.h"
 #include "PEXImporter.h"
 #include "TextImporter.h"
+#include "TypeScriptImporter.h"
+#include "ParticleEffectImporter.h"
+#include "CSharpImporter.h"
 #include "NETAssemblyImporter.h"
 
 #include "AssetEvents.h"
@@ -154,7 +172,7 @@ bool Asset::Load()
     json_->Load(*file);
     file->Close();
 
-    JSONValue root = json_->GetRoot();
+    JSONValue& root = json_->GetRoot();
 
     assert(root.Get("version").GetInt() == ASSET_VERSION);
 
@@ -165,7 +183,6 @@ bool Asset::Load()
     dirty_ = false;
     if (!CheckCacheFile())
     {
-        LOGINFOF("CheckCacheFile:false - %s", path_.CString());
         dirty_ = true;
     }
 
@@ -257,7 +274,7 @@ bool Asset::CreateImporter()
         {
             importer_ = new ModelImporter(context_, this);
         }
-        if (ext == ".ogg" || ext == ".wav")
+        else if (ext == ".ogg" || ext == ".wav")
         {
             importer_ = new AudioImporter(context_, this);
         }
@@ -268,6 +285,10 @@ bool Asset::CreateImporter()
         else if (ext == ".js")
         {
             importer_ = new JavascriptImporter(context_, this);
+        }
+        else if (ext == ".ts")
+        {
+            importer_ = new TypeScriptImporter(context_, this);
         }
         else if (ext == ".json")
         {
@@ -293,20 +314,29 @@ bool Asset::CreateImporter()
         {
             importer_ = new PEXImporter(context_, this);
         }
-        else if (ext == ".txt")
+        else if (ext == ".peffect")
+        {
+            importer_ = new ParticleEffectImporter(context_, this);
+        }
+        else if (ext == ".txt" || ext == ".xml" || ext == ".hlsl" || ext == ".glsl")
         {
             importer_ = new TextImporter(context_, this);
         }
         else if (ext == ".dll")
         {
-            // TODO: check for native dll
-#ifdef ATOMIC_DOTNET
             importer_ = new NETAssemblyImporter(context_, this);
-#endif
+        }
+        else if (ext == ".cs")
+        {
+            importer_ = new CSharpImporter(context_, this);
         }
         else if (textureFormats.Contains(ext))
         {
             importer_ = new TextureImporter(context_, this);
+        }
+        else
+        {
+            importer_ = new AssetImporter(context_, this);
         }
 
     }

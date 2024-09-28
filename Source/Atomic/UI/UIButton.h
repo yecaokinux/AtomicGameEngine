@@ -30,25 +30,44 @@ namespace Atomic
 {
 
 
-class UIButton : public UIWidget
+class ATOMIC_API UIButton : public UIWidget
 {
-    OBJECT(UIButton)
+    ATOMIC_OBJECT(UIButton, UIWidget)
 
 public:
 
     UIButton(Context* context, bool createWidget = true);
     virtual ~UIButton();
 
+    /// Set if the button's text field should be allowed to squeeze below its preferred size
+    /// If squeezable it may shrink to width 0
     void SetSqueezable(bool value);
 
     void SetEmulationButton(int button);
+
+    /// A URL link may be set via the URL value (or the Text value if using TBButton.link skin)
+    /// If enabled, a FileSystem open will be called when the button is clicked
+    /// for example a http:// link will open the default browser
+    void SetURLEnabled(bool enabled) { urlEnabled_ = enabled; }
+
+    /// Set the URL which is opened when this button is clicked
+    void SetURL (const String& url);
+
+    /// Get the URL which is opened when this button is clicked
+    String GetURL ();
+
+    ///Set to true if the button should toggle on and off    
+    void SetToggleMode(bool toggle);
+    bool GetToggleMode() const;
 
 protected:
 
     virtual bool OnEvent(const tb::TBWidgetEvent &ev);
 
 private:
+
     int emulationButton_;
+    bool urlEnabled_;
 };
 
 }

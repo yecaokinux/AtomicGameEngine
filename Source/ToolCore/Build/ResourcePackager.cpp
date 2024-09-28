@@ -1,12 +1,8 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
-//
-
-//
 // Portions Copyright (c) 2008-2014 the Urho3D project.
+//
+//
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +24,7 @@
 //
 
 #include "Atomic/Core/StringUtils.h"
+#include <Atomic/IO/Log.h>
 #include <Atomic/IO/FileSystem.h>
 #include <Atomic/Container/ArrayPtr.h>
 
@@ -137,7 +134,7 @@ bool ResourcePackager::WritePackageFile(const String& destFilePath)
             unsigned packedSize = LZ4_compressHC((const char*)&buffer[pos], (char*)compressBuffer.Get(), unpackedSize);
             if (!packedSize)
             {
-                buildBase_->FailBuild("LZ4 compression failed for file " + entry->absolutePath_ + " at offset " + pos);
+                buildBase_->FailBuild(ToString("LZ4 compression failed for file %s at offset %u", entry->absolutePath_.CString(), pos));
                 return false;
             }
 
@@ -198,11 +195,6 @@ void ResourcePackager::GeneratePackage(const String& destFilePath)
         if (!file.Open(entry->absolutePath_))
         {
             buildBase_->FailBuild(Atomic::ToString("Could not open resource file %s", entry->absolutePath_.CString()));
-            return;
-        }
-
-        if (!file.GetSize())
-        {
             return;
         }
 

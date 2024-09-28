@@ -39,7 +39,7 @@ namespace Atomic
 class UISceneView;
 class UIRenderer;
 
-class SceneViewWidget : public tb::TBWidget
+class ATOMIC_API SceneViewWidget : public tb::TBWidget
 {
     friend class UISceneView;
 
@@ -59,12 +59,12 @@ private:
 };
 
 
-class UISceneView : public UIWidget
+class ATOMIC_API UISceneView : public UIWidget
 {
 
     friend class SceneViewWidget;
 
-    OBJECT(UISceneView)
+    ATOMIC_OBJECT(UISceneView, UIWidget)
 
 public:
 

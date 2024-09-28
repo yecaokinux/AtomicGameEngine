@@ -27,14 +27,16 @@
 namespace Atomic
 {
 
-class UIFontDescription : public Object
+class ATOMIC_API UIFontDescription : public Object
 {
-    OBJECT(UIFontDescription)
+    ATOMIC_OBJECT(UIFontDescription, Object)
 
 public:
 
     UIFontDescription(Context* context);
     virtual ~UIFontDescription();
+
+    int GetSize();
 
     void SetId(const String& id);
     void SetSize(int size);

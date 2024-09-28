@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,7 @@
 #include "../IO/Log.h"
 #include "../Resource/ResourceCache.h"
 #include "../Resource/XMLFile.h"
-
+#define STB_VORBIS_HEADER_ONLY
 #include <STB/stb_vorbis.h>
 
 #include "../DebugNew.h"
@@ -59,7 +59,7 @@ struct WavHeader
 static const unsigned IP_SAFETY = 4;
 
 Sound::Sound(Context* context) :
-    Resource(context),
+    ResourceWithMetadata(context),
     repeat_(0),
     end_(0),
     dataSize_(0),
@@ -83,7 +83,7 @@ void Sound::RegisterObject(Context* context)
 
 bool Sound::BeginLoad(Deserializer& source)
 {
-    PROFILE(LoadSound);
+    ATOMIC_PROFILE(LoadSound);
 
     bool success;
     if (GetExtension(source.GetName()) == ".ogg")
@@ -111,7 +111,7 @@ bool Sound::LoadOggVorbis(Deserializer& source)
     stb_vorbis* vorbis = stb_vorbis_open_memory((unsigned char*)data.Get(), dataSize, &error, 0);
     if (!vorbis)
     {
-        LOGERROR("Could not read Ogg Vorbis data from " + source.GetName());
+        ATOMIC_LOGERROR("Could not read Ogg Vorbis data from " + source.GetName());
         return false;
     }
 
@@ -143,7 +143,7 @@ bool Sound::LoadWav(Deserializer& source)
 
     if (memcmp("RIFF", header.riffText_, 4) || memcmp("WAVE", header.waveText_, 4))
     {
-        LOGERROR("Could not read WAV data from " + source.GetName());
+        ATOMIC_LOGERROR("Could not read WAV data from " + source.GetName());
         return false;
     }
 
@@ -158,7 +158,7 @@ bool Sound::LoadWav(Deserializer& source)
         source.Seek(source.GetPosition() + header.formatLength_);
         if (!header.formatLength_ || source.GetPosition() >= source.GetSize())
         {
-            LOGERROR("Could not read WAV data from " + source.GetName());
+            ATOMIC_LOGERROR("Could not read WAV data from " + source.GetName());
             return false;
         }
     }
@@ -177,7 +177,7 @@ bool Sound::LoadWav(Deserializer& source)
     // Check for correct format
     if (header.format_ != 1)
     {
-        LOGERROR("Could not read WAV data from " + source.GetName());
+        ATOMIC_LOGERROR("Could not read WAV data from " + source.GetName());
         return false;
     }
 
@@ -192,7 +192,7 @@ bool Sound::LoadWav(Deserializer& source)
         source.Seek(source.GetPosition() + header.dataLength_);
         if (!header.dataLength_ || source.GetPosition() >= source.GetSize())
         {
-            LOGERROR("Could not read WAV data from " + source.GetName());
+            ATOMIC_LOGERROR("Could not read WAV data from " + source.GetName());
             return false;
         }
     }
@@ -348,9 +348,9 @@ void Sound::LoadParameters()
         return;
 
     XMLElement rootElem = file->GetRoot();
-    XMLElement paramElem = rootElem.GetChild();
+    LoadMetadataFromXML(rootElem);
 
-    while (paramElem)
+    for (XMLElement paramElem = rootElem.GetChild(); paramElem; paramElem = paramElem.GetNext())
     {
         String name = paramElem.GetName();
 
@@ -373,8 +373,6 @@ void Sound::LoadParameters()
             if (paramElem.HasAttribute("start") && paramElem.HasAttribute("end"))
                 SetLoop((unsigned)paramElem.GetInt("start"), (unsigned)paramElem.GetInt("end"));
         }
-
-        paramElem = paramElem.GetNext();
     }
 }
 

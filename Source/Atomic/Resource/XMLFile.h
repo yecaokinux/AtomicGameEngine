@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -40,7 +40,7 @@ namespace Atomic
 /// XML document resource.
 class ATOMIC_API XMLFile : public Resource
 {
-    OBJECT(XMLFile);
+    ATOMIC_OBJECT(XMLFile, Resource);
 
 public:
     /// Construct.
@@ -61,12 +61,14 @@ public:
     bool FromString(const String& source);
     /// Clear the document and create a root element.
     XMLElement CreateRoot(const String& name);
+    /// Get the root element if it has matching name, otherwise create it and clear the document.
+    XMLElement GetOrCreateRoot(const String& name);
 
     /// Return the root element, with optionally specified name. Return null element if not found.
     XMLElement GetRoot(const String& name = String::EMPTY);
 
     /// Return the pugixml document.
-    pugi::xml_document* GetDocument() const { return document_; }
+    pugi::xml_document* GetDocument() const { return document_.Get(); }
 
     /// Serialize the XML content to a string.
     String ToString(const String& indentation = "\t") const;
@@ -92,7 +94,7 @@ private:
     bool CombineText(const pugi::xml_node& patch, const pugi::xml_node& original, bool prepend) const;
 
     /// Pugixml document.
-    pugi::xml_document* document_;
+    UniquePtr<pugi::xml_document> document_;
 };
 
 }

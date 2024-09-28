@@ -1,21 +1,35 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
-import EditorEvents = require("editor/EditorEvents");
 import EditorUI = require("ui/EditorUI");
 import ModalWindow = require("../ModalWindow");
 import ProgressModal = require("../ProgressModal");
-import UIEvents = require("../../UIEvents");
 
 import WindowsSettingsWidget = require("./platforms/WindowsSettingsWidget");
 import MacSettingsWidget = require("./platforms/MacSettingsWidget");
 import AndroidSettingsWidget = require("./platforms/AndroidSettingsWidget");
 import IOSSettingsWidget = require("./platforms/IOSSettingsWidget");
 import WebSettingsWidget = require("./platforms/WebSettingsWidget");
+import LinuxSettingsWidget = require("./platforms/LinuxSettingsWidget");
 
 class BuildWindow extends ModalWindow {
 
@@ -39,15 +53,16 @@ class BuildWindow extends ModalWindow {
             case "ANDROID": this.platformIndicator.skinBg = "LogoAndroid"; break;
             case "IOS": this.platformIndicator.skinBg = "LogoIOS"; break;
             case "WEB": this.platformIndicator.skinBg = "LogoHTML5"; break;
+            case "LINUX": this.platformIndicator.skinBg = "LogoLinux"; break;
 
         }
 
-        this.subscribeToEvent(this, "WidgetEvent", (ev) => this.handleWidgetEvent(ev));
+        this.subscribeToEvent(this, Atomic.UIWidgetEvent((ev) => this.handleWidgetEvent(ev)));
     }
 
     handleWidgetEvent(ev: Atomic.UIWidgetEvent): boolean {
 
-        if (ev.type == Atomic.UI_EVENT_TYPE_CLICK) {
+        if (ev.type == Atomic.UI_EVENT_TYPE.UI_EVENT_TYPE_CLICK) {
 
             if (ev.target.id == "cancel") {
                 this.hide();
@@ -68,7 +83,7 @@ class BuildWindow extends ModalWindow {
 
               if (!userPrefs.lastBuildPath.length || !Atomic.fileSystem.dirExists(userPrefs.lastBuildPath)) {
 
-                  new Atomic.UIMessageWindow(this, "modal_error").show("Build Folder","Please select an existing build folder", Atomic.UI_MESSAGEWINDOW_SETTINGS_OK, true, 480, 240);
+                  new Atomic.UIMessageWindow(this, "modal_error").show("Build Folder", "Please select an existing build folder", Atomic.UI_MESSAGEWINDOW_SETTINGS.UI_MESSAGEWINDOW_SETTINGS_OK, true, 480, 240);
                   return true;
               }
 

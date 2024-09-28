@@ -1,35 +1,62 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
 //
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+#include <Poco/File.h>
 
 #include <Atomic/IO/Log.h>
 #include <Atomic/IO/FileSystem.h>
+#include <Atomic/Resource/JSONFile.h>
 
 #include "../Subprocess/SubprocessSystem.h"
 #include "../Project/Project.h"
 #include "../ToolEnvironment.h"
+#include "../Assets/Asset.h"
+#include "../Assets/AssetDatabase.h"
+#include "../Import/ImportConfig.h"
 
 #include "BuildSystem.h"
 #include "BuildEvents.h"
 #include "BuildBase.h"
 #include "ResourcePackager.h"
+#include "AssetBuildConfig.h"
 
 namespace ToolCore
 {
 
 BuildBase::BuildBase(Context * context, Project* project, PlatformID platform) : Object(context),
     platformID_(platform),
+    project_(project),
     containsMDL_(false),
-    buildFailed_(false)
+    buildFailed_(false),
+    assetBuildTag_(String::EMPTY),
+    fileIncludedResourcesLog_(nullptr),
+    resourcesOnly_(false),
+    verbose_(false)
 {
     if (UseResourcePackager())
         resourcePackager_ = new ResourcePackager(context, this);
 
-    project_ = project;
+    fileIncludedResourcesLog_ = new File(context_, "BuildIncludedResources.log", Atomic::FILE_WRITE);
 
+    ReadAssetBuildConfig();
 }
 
 BuildBase::~BuildBase()
@@ -38,6 +65,9 @@ BuildBase::~BuildBase()
     {
         delete resourceEntries_[i];
     }
+
+    fileIncludedResourcesLog_->Close();
+    delete fileIncludedResourcesLog_;
 }
 
 #ifdef ATOMIC_PLATFORM_WINDOWS
@@ -46,7 +76,7 @@ bool BuildBase::BuildClean(const String& path)
 {
     if (buildFailed_)
     {
-        LOGERRORF("BuildBase::BuildClean - Attempt to clean directory of failed build, %s", path.CString());
+        ATOMIC_LOGERRORF("BuildBase::BuildClean - Attempt to clean directory of failed build, %s", path.CString());
         return false;
     }
 
@@ -60,10 +90,10 @@ bool BuildBase::BuildClean(const String& path)
 
     String pathName, fileName, ext;
     SplitPath(path, pathName, fileName, ext);
-    pathName = AddTrailingSlash(pathName);    
+    pathName = AddTrailingSlash(pathName);
 
     unsigned i = 0;
-    while (true) 
+    while (true)
     {
         String newPath = ToString("%s%s_Temp_%u", pathName.CString(), fileName.CString(), i++);
         if (!fileSystem->DirExists(newPath))
@@ -80,7 +110,7 @@ bool BuildBase::BuildClean(const String& path)
         }
         else
         {
-            LOGWARNINGF("BuildBase::BuildClean - temp build folder exists, removing: %s", newPath.CString());
+            ATOMIC_LOGWARNINGF("BuildBase::BuildClean - temp build folder exists, removing: %s", newPath.CString());
             fileSystem->RemoveDir(newPath, true);
         }
 
@@ -107,7 +137,7 @@ bool BuildBase::BuildCreateDirectory(const String& path)
 {
     if (buildFailed_)
     {
-        LOGERRORF("BuildBase::BuildCreateDirectory - Attempt to create directory of failed build, %s", path.CString());
+        ATOMIC_LOGERRORF("BuildBase::BuildCreateDirectory - Attempt to create directory of failed build, %s", path.CString());
         return false;
     }
 
@@ -132,7 +162,7 @@ bool BuildBase::BuildCopyFile(const String& srcFileName, const String& destFileN
 {
     if (buildFailed_)
     {
-        LOGERRORF("BuildBase::BuildCopyFile - Attempt to copy file of failed build, %s", srcFileName.CString());
+        ATOMIC_LOGERRORF("BuildBase::BuildCopyFile - Attempt to copy file of failed build, %s", srcFileName.CString());
         return false;
     }
 
@@ -149,11 +179,37 @@ bool BuildBase::BuildCopyFile(const String& srcFileName, const String& destFileN
     return true;
 }
 
+bool BuildBase::BuildCopyDir(const String& srcDir, const String& destDir)
+{
+    if (buildFailed_)
+    {
+        ATOMIC_LOGERRORF("BuildBase::BuildCopyDir - Attempt to copy directory of failed build, %s", srcDir.CString());
+        return false;
+    }
+
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+
+    bool result = fileSystem->CopyDir(srcDir, destDir);
+
+    if (!result)
+    {
+        FailBuild(ToString("BuildBase::BuildCopyDir: Unable to copy dir %s -> %s", srcDir.CString(), destDir.CString()));
+        return false;
+    }
+
+    return true;
+}
+
+bool BuildBase::CheckIncludeResourceFile(const String & resourceDir, const String & fileName)
+{
+    return (GetExtension(fileName) != ".psd");
+}
+
 bool BuildBase::BuildRemoveDirectory(const String& path)
 {
     if (buildFailed_)
     {
-        LOGERRORF("BuildBase::BuildRemoveDirectory - Attempt to remove directory of failed build, %s", path.CString());
+        ATOMIC_LOGERRORF("BuildBase::BuildRemoveDirectory - Attempt to remove directory of failed build, %s", path.CString());
         return false;
     }
 
@@ -161,7 +217,15 @@ bool BuildBase::BuildRemoveDirectory(const String& path)
     if (!fileSystem->DirExists(path))
         return true;
 
+#ifdef ATOMIC_PLATFORM_LINUX
+    bool result = true;   // fileSystem->RemoveDir(path, true); crashes on linux
+    Poco::File dirs(buildPath_.CString());
+    dirs.remove(true);
+    if (fileSystem->DirExists(buildPath_))
+        result = false;
+#else
     bool result = fileSystem->RemoveDir(path, true);
+#endif
 
     if (!result)
     {
@@ -176,6 +240,9 @@ void BuildBase::BuildLog(const String& message, bool sendEvent)
 {
     buildLog_.Push(message);
 
+    if (autoLog_)
+        ATOMIC_LOGINFO(message);
+    
     if (sendEvent)
     {
         String colorMsg = ToString("<color #D4FB79>%s</color>\n", message.CString());
@@ -189,6 +256,9 @@ void BuildBase::BuildLog(const String& message, bool sendEvent)
 void BuildBase::BuildWarn(const String& warning, bool sendEvent)
 {
     buildWarnings_.Push(warning);
+
+    if (autoLog_)
+        ATOMIC_LOGWARNING(warning);
 
     if (sendEvent)
     {
@@ -204,6 +274,9 @@ void BuildBase::BuildError(const String& error, bool sendEvent)
 {
     buildErrors_.Push(error);
 
+    if (autoLog_)
+        ATOMIC_LOGERROR(error);
+
     if (sendEvent)
     {
         String colorMsg = ToString("<color #FF0000>%s</color>\n", error.CString());
@@ -217,7 +290,7 @@ void BuildBase::FailBuild(const String& message)
 {
     if (buildFailed_)
     {
-        LOGERRORF("BuildBase::FailBuild - Attempt to fail already failed build: %s", message.CString());
+        ATOMIC_LOGERRORF("BuildBase::FailBuild - Attempt to fail already failed build: %s", message.CString());
         return;
     }
 
@@ -227,9 +300,7 @@ void BuildBase::FailBuild(const String& message)
 
     BuildSystem* buildSystem = GetSubsystem<BuildSystem>();
     buildSystem->BuildComplete(platformID_, buildPath_, false, message);
-
 }
-
 
 void BuildBase::HandleSubprocessOutputEvent(StringHash eventType, VariantMap& eventData)
 {
@@ -252,69 +323,376 @@ void BuildBase::GetDefaultResourcePaths(Vector<String>& paths)
     paths.Push(AddTrailingSlash(tenv->GetPlayerDataDir()));
 }
 
-
-void BuildBase::ScanResourceDirectory(const String& resourceDir)
+String BuildBase::GetSettingsDirectory()
 {
-    Vector<String> fileNames;
-    FileSystem* fileSystem = GetSubsystem<FileSystem>();
-    fileSystem->ScanDir(fileNames, resourceDir, "*.*", SCAN_FILES, true);
+    return project_->GetProjectPath() + "/Settings";
+}
 
-    for (unsigned i = 0; i < fileNames.Size(); i++)
+void BuildBase::BuildDefaultResourceEntries()
+{
+    String buildLogOutput(String::EMPTY);
+
+    for (unsigned i = 0; i < resourceDirs_.Size(); i++)
     {
-        const String& filename = fileNames[i];
+        String resourceDir = resourceDirs_[i];
+        fileIncludedResourcesLog_->WriteLine("\nBuildBase::BuildDefaultResourceEntries - Default resources being included from: " + resourceDir);
 
-        for (unsigned j = 0; j < resourceEntries_.Size(); j++)
+        Vector<String> fileNames;
+        FileSystem* fileSystem = GetSubsystem<FileSystem>();
+        fileSystem->ScanDir(fileNames, resourceDir, "*.*", SCAN_FILES, true);
+
+        for (unsigned i = 0; i < fileNames.Size(); i++)
         {
-            const BuildResourceEntry* entry = resourceEntries_[j];
+            const String& filename = fileNames[i];
+            AddToResourcePackager(filename, resourceDir);
 
-            if (entry->packagePath_ == filename)
+            if (verbose_)
             {
-                BuildWarn(ToString("Resource Path: %s already exists", filename.CString()));
-                continue;
+                ATOMIC_LOGINFO(ToString("Default Resource Added: %s%s", resourceDir.CString(), filename.CString()));
             }
         }
-
-        // TODO: Add additional filters
-        if (GetExtension(filename) == ".psd")
-            continue;
-
-        BuildResourceEntry* newEntry = new BuildResourceEntry;
-
-// BEGIN LICENSE MANAGEMENT
-        if (GetExtension(filename) == ".mdl")
-        {
-            containsMDL_ = true;
-        }
-// END LICENSE MANAGEMENT
-
-        newEntry->absolutePath_ = resourceDir + filename;
-        newEntry->resourceDir_ = resourceDir;
-
-        newEntry->packagePath_ = filename;
-
-        resourceEntries_.Push(newEntry);
-
-        //LOGINFOF("Adding resource: %s : %s", newEntry->absolutePath_.CString(), newEntry->packagePath_.CString());
     }
 }
 
-void BuildBase::BuildResourceEntries()
+void BuildBase::BuildProjectResourceEntries()
 {
-    for (unsigned i = 0; i < resourceDirs_.Size(); i++)
-    {
-        ScanResourceDirectory(resourceDirs_[i]);
-    }
+    String buildLogOutput(String::EMPTY);
 
-    if (resourcePackager_.NotNull())
+    if (AssetBuildConfig::IsLoaded())
     {
-        for (unsigned i = 0; i < resourceEntries_.Size(); i++)
+        buildLogOutput += "\nBaseBuild::BuildProjectResourceEntries - ./Settings/AssetBuildConfig.json found. ";
+        if (!assetBuildTag_.Empty())
         {
-            BuildResourceEntry* entry = resourceEntries_[i];
-            resourcePackager_->AddResourceEntry(entry);
+            buildLogOutput += "Using build-tag parameter :  " + assetBuildTag_;
+            fileIncludedResourcesLog_->WriteLine(buildLogOutput);
+
+            BuildFilteredProjectResourceEntries();
+            return;
+        }
+        buildLogOutput += "No build-tag parameter used.";
+    }
+    buildLogOutput += "\nBaseBuild::BuildProjectResourceEntries - No custom asset include configuration being used - ";
+    buildLogOutput += "AssetBuildConfig.json not loaded, OR no build-tag parameter used.";
+    fileIncludedResourcesLog_->WriteLine(buildLogOutput);
+
+    BuildAllProjectResourceEntries();
+}
+
+void BuildBase::BuildAllProjectResourceEntries()
+{
+    for (unsigned i = 0; i < projectResourceDir_.Size(); i++)
+    {
+        String projectResourceDir = projectResourceDir_[i];
+        fileIncludedResourcesLog_->WriteLine("\nBuildBase::BuildAllProjectResourceEntries - Project resources being included from: " + projectResourceDir);
+
+        FileSystem* fileSystem = GetSubsystem<FileSystem>();
+
+        bool compressTextures = false;
+
+        if (ImportConfig::IsLoaded())
+        {
+            VariantMap tiParameters;
+            ImportConfig::ApplyConfig(tiParameters);
+            VariantMap::ConstIterator itr = tiParameters.Begin();
+
+            for (; itr != tiParameters.End(); itr++)
+            {
+                if (itr->first_ == "tiProcess_CompressTextures")
+                    compressTextures = itr->second_.GetBool();
+            }
         }
 
+        Vector<String> assetFileNamesInProject;
+        fileSystem->ScanDir(assetFileNamesInProject, projectResourceDir, "*.asset", SCAN_FILES, true);
+
+        Vector<String> cachedFileNames;
+
+        AssetDatabase* db = GetSubsystem<AssetDatabase>();
+        String cachePath = db->GetCachePath();
+        Vector<String> filesInCacheFolder;
+        Vector<String> fileNamesInCacheFolder;
+
+        Vector<String> compressedResources;
+
+        if (assetFileNamesInProject.Size() > 0)
+        {
+            fileSystem->ScanDir(filesInCacheFolder, cachePath, "*.*", SCAN_FILES, false);
+
+            for (unsigned j = 0; j < filesInCacheFolder.Size(); ++j)
+            {
+
+                const String &fileName = GetFileNameAndExtension(filesInCacheFolder[j]);
+                fileNamesInCacheFolder.Push(fileName);
+            }
+        }
+
+
+        for (unsigned i = 0; i < assetFileNamesInProject.Size(); i++)
+        {
+            unsigned assetSubStrPos = assetFileNamesInProject[i].Find(".asset");
+
+            String baseFileName = assetFileNamesInProject[i].Substring(0, assetSubStrPos);
+
+            String extension = GetExtension(baseFileName);
+
+            if (compressTextures && (extension == ".jpg" || extension == ".png" || extension == ".tga"))
+            {
+                SharedPtr<File> file(new File(context_, project_->GetResourcePath() + assetFileNamesInProject[i]));
+                SharedPtr<JSONFile> json(new JSONFile(context_));
+                json->Load(*file);
+                file->Close();
+
+                JSONValue& root = json->GetRoot();
+                int test = root.Get("version").GetInt();
+                assert(root.Get("version").GetInt() == ASSET_VERSION);
+
+                String guid = root.Get("guid").GetString();
+
+                String dds = guid + ".dds";
+
+                if (fileNamesInCacheFolder.Contains(dds))
+                {
+                    compressedResources.Push(baseFileName);
+                }
+            }
+        }
+
+        Vector<String> fileNamesInProject;        
+        fileSystem->ScanDir(fileNamesInProject, projectResourceDir, "*.*", SCAN_FILES, true);
+
+        for (unsigned i = 0; i < fileNamesInProject.Size(); i++)
+        {
+            String fName = fileNamesInProject[i];
+
+            if (compressedResources.Contains(fName))
+            {
+                if (autoLog_)
+                {
+                    ATOMIC_LOGINFO(ToString("Project Resource not included because compressed version exists: %s%s", projectResourceDir.CString(), fileNamesInProject[i].CString()));
+                }
+            }
+            else
+            {
+                AddToResourcePackager(fileNamesInProject[i], projectResourceDir);
+                
+                if (verbose_)
+                {
+                    ATOMIC_LOGINFO(ToString("Project Resource Added: %s%s", projectResourceDir.CString(), fileNamesInProject[i].CString()));
+                }
+            }
+        }
+    }
+}
+
+void BuildBase::BuildFilteredProjectResourceEntries()
+{
+    // Loading up the AssetBuildConfig.json,
+    // obtaining a list of files to include in the build.
+    VariantMap resourceTags;
+    AssetBuildConfig::ApplyConfig(resourceTags);
+    Vector<String> assetBuildConfigFiles;
+    VariantMap::ConstIterator itr = resourceTags.Begin();
+
+    while (itr != resourceTags.End())
+    {
+        if (itr->first_ == assetBuildTag_)
+        {
+            assetBuildConfigFiles = itr->second_.GetStringVector();
+            for (unsigned i = 0; i < assetBuildConfigFiles.Size(); ++i)
+            {
+                // remove case sensitivity
+                assetBuildConfigFiles[i] = assetBuildConfigFiles[i].ToLower();
+            }
+            break;
+        }
+
+        itr++;
+        if (itr == resourceTags.End())
+        {
+            ATOMIC_LOGERRORF("BuildBase::BuildFilteredProjectResourceEntries - Asset build-tag \"%s\" not defined in ./Settings/AssetBuildConfig.json", assetBuildTag_.CString());
+        }
     }
 
+    // find any folders defined in assetbuildconfig.json, and add the non-".asset" files in them.
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+    Vector<String> filesInFolderToAdd;
+
+    for (unsigned i = 0; i < assetBuildConfigFiles.Size(); ++i)
+    {
+        String &filename = assetBuildConfigFiles[i];
+
+        if (GetExtension(filename) == String::EMPTY &&
+            fileSystem->DirExists(project_->GetResourcePath() + filename))
+        {
+            // rename 'filename' to 'folder' for context
+            String folder(filename);
+
+            // add a trailing slash if not defined
+            if (folder.Back() != '/')
+                folder = AddTrailingSlash(folder);
+
+            Vector<String> filesInFolder;
+            fileSystem->ScanDir(filesInFolder, project_->GetResourcePath() + folder, "*.*", SCAN_FILES, true);
+            for (unsigned j = 0; j < filesInFolder.Size(); ++j)
+            {
+                String path = filesInFolder[j];
+
+                // not interested in .asset files for now, will be included later.
+                if (GetExtension(path) != ".asset")
+                {
+                    filesInFolderToAdd.Push(folder + path.ToLower());
+                }
+            }
+        }
+    }
+    // add the files defined using a folder in AssetBuildConfig.json
+    for (unsigned i = 0; i < filesInFolderToAdd.Size(); ++i)
+    {
+        assetBuildConfigFiles.Push(filesInFolderToAdd[i]);
+    }
+
+    // check if the files in AssetBuildConfig.json exist,
+    // as well as their corresponding .asset file
+    Vector<String> filesInResourceFolder;
+    Vector<String> resourceFilesToInclude;
+    fileSystem->ScanDir(filesInResourceFolder, project_->GetResourcePath(), "*.*", SCAN_FILES, true);
+    for (unsigned j = 0; j < filesInResourceFolder.Size(); ++j)
+    {
+        // don't want to checks to be case sensitive
+        filesInResourceFolder[j] = filesInResourceFolder[j].ToLower();
+    }
+
+    for (unsigned i = 0; i < assetBuildConfigFiles.Size(); ++i)
+    {
+        // .asset file is of primary importance since we used it to identify the associated cached file.
+        // without the .asset file the resource is removed from being included in the build.
+
+        // don't want checks to be case sensitive
+        String &filename = assetBuildConfigFiles[i];
+        if (filesInResourceFolder.Contains(filename) &&
+            filesInResourceFolder.Contains(filename + ".asset"))
+        {
+            resourceFilesToInclude.Push(filename);
+            resourceFilesToInclude.Push(filename + ".asset");
+            continue;
+        }
+        fileIncludedResourcesLog_->WriteLine("File " + filename + " ignored since it does not have an associated .asset file");
+    }
+
+    // add valid files included from the AssetBuildConfig.json
+    for (StringVector::ConstIterator it = resourceFilesToInclude.Begin(); it != resourceFilesToInclude.End(); ++it)
+    {
+        AddToResourcePackager(*it, project_->GetResourcePath());
+    }
+
+    // Get associated cache GUID from the asset file
+    Vector<String> filesWithGUIDtoInclude;
+
+    for (StringVector::Iterator it = resourceFilesToInclude.Begin(); it != resourceFilesToInclude.End(); ++it)
+    {
+        String &filename = *it;
+        if (GetExtension(*it) == ".asset")
+        {
+            SharedPtr<File> file(new File(context_, project_->GetResourcePath() + *it));
+            SharedPtr<JSONFile> json(new JSONFile(context_));
+            json->Load(*file);
+            file->Close();
+
+            JSONValue& root = json->GetRoot();
+            int test = root.Get("version").GetInt();
+            assert(root.Get("version").GetInt() == ASSET_VERSION);
+
+            String guid = root.Get("guid").GetString();
+            filesWithGUIDtoInclude.Push(guid);
+        }
+    }
+
+    // Obtain files in cache folder,
+    // Check if the file contains the guid, and add it to the cacheFilesToInclude
+    Vector<String> filesInCacheFolder;
+    Vector<String> cacheFilesToInclude;
+    AssetDatabase* db = GetSubsystem<AssetDatabase>();
+    String cachePath = db->GetCachePath();
+    fileSystem->ScanDir(filesInCacheFolder, cachePath, "*.*", SCAN_FILES, false);
+    for (unsigned i = 0; i < filesWithGUIDtoInclude.Size(); ++i)
+    {
+        String &guid = filesWithGUIDtoInclude[i];
+        for (unsigned j = 0; j < filesInCacheFolder.Size(); ++j)
+        {
+            const String &filename = GetFileName(filesInCacheFolder[j]);
+            String &filenamePath = filesInCacheFolder[j];
+            if (filename.Contains(guid))
+            {
+                cacheFilesToInclude.Push(filesInCacheFolder[j]);
+                // do not continue...
+                // there might be multiple files with the same guid having an guid_animaiton extention.
+            }
+        }
+    }
+
+    // include a texture file's cached .dds file when building in windows
+#ifdef ATOMIC_PLATFORM_DESKTOP
+    for (StringVector::ConstIterator it = resourceFilesToInclude.Begin(); it != resourceFilesToInclude.End(); ++it)
+    {
+        if (!CheckIncludeResourceFile(project_->GetResourcePath(), *it))
+        {
+            FileSystem* fileSystem = GetSubsystem<FileSystem>();
+            String associatedDDSpath = "DDS/" + *it + ".dds";
+            String compressedPath = cachePath + associatedDDSpath;
+            if (fileSystem->FileExists(compressedPath))
+            {
+                cacheFilesToInclude.Push(associatedDDSpath);
+            }
+        }
+    }
+#endif
+
+    // Add the cache files to the resource packager
+    for (StringVector::ConstIterator it = cacheFilesToInclude.Begin(); it != cacheFilesToInclude.End(); ++it)
+    {
+        AddToResourcePackager(*it, cachePath);
+    }
+}
+
+void BuildBase::AddToResourcePackager(const String& filename, const String& resourceDir)
+{
+    // Check if the file is already included in the resourceEntries_ list
+    for (unsigned j = 0; j < resourceEntries_.Size(); j++)
+    {
+        const BuildResourceEntry* entry = resourceEntries_[j];
+
+        if (entry->packagePath_ == filename)
+        {
+            BuildWarn(ToString("Resource Path: %s already exists", filename.CString()));
+            continue;
+        }
+    }
+
+    if (!CheckIncludeResourceFile(resourceDir, filename))
+    {
+        fileIncludedResourcesLog_->WriteLine(resourceDir + filename + " skipped because of file extention: " + GetExtension(filename));
+        return;
+    }
+
+    BuildResourceEntry* newEntry = new BuildResourceEntry;
+
+    // BEGIN LICENSE MANAGEMENT
+    if (GetExtension(filename) == ".mdl")
+    {
+        containsMDL_ = true;
+    }
+    // END LICENSE MANAGEMENT
+
+    newEntry->absolutePath_ = resourceDir + filename;
+    newEntry->resourceDir_ = resourceDir;
+    newEntry->packagePath_ = filename;
+
+    resourceEntries_.Push(newEntry);
+
+    assert(resourcePackager_.NotNull());
+    resourcePackager_->AddResourceEntry(newEntry);
+
+    fileIncludedResourcesLog_->WriteLine(newEntry->absolutePath_);
 }
 
 void BuildBase::GenerateResourcePackage(const String& resourcePackagePath)
@@ -326,6 +704,30 @@ void BuildBase::AddResourceDir(const String& dir)
 {
     assert(!resourceDirs_.Contains(dir));
     resourceDirs_.Push(dir);
+}
+
+void BuildBase::AddProjectResourceDir(const String& dir)
+{
+    assert(!projectResourceDir_.Contains(dir));
+    projectResourceDir_.Push(dir);
+}
+
+void BuildBase::ReadAssetBuildConfig()
+{
+    String projectPath = project_->GetProjectPath();
+    projectPath = RemoveTrailingSlash(projectPath);
+
+    String filename = projectPath + "Settings/AssetBuildConfig.json";
+
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+    if (!fileSystem->FileExists(filename))
+        return;
+
+    if (AssetBuildConfig::LoadFromFile(context_, filename))
+    {
+        VariantMap assetBuildConfig;
+        AssetBuildConfig::ApplyConfig(assetBuildConfig);
+    }
 }
 
 

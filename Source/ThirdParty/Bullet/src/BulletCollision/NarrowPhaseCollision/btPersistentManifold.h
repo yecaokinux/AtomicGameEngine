@@ -17,11 +17,11 @@ subject to the following restrictions:
 #define BT_PERSISTENT_MANIFOLD_H
 
 
-#include "../../LinearMath/btVector3.h"
-#include "../../LinearMath/btTransform.h"
+#include "LinearMath/btVector3.h"
+#include "LinearMath/btTransform.h"
 #include "btManifoldPoint.h"
 class btCollisionObject;
-#include "../../LinearMath/btAlignedAllocator.h"
+#include "LinearMath/btAlignedAllocator.h"
 
 struct btCollisionResult;
 
@@ -51,8 +51,8 @@ enum btContactManifoldTypes
 ///note that some pairs of objects might have more then one contact manifold.
 
 
-ATTRIBUTE_ALIGNED128( class) btPersistentManifold : public btTypedObject
-//ATTRIBUTE_ALIGNED16( class) btPersistentManifold : public btTypedObject
+//ATTRIBUTE_ALIGNED128( class) btPersistentManifold : public btTypedObject
+ATTRIBUTE_ALIGNED16( class) btPersistentManifold : public btTypedObject
 {
 
 	btManifoldPoint m_pointCache[MANIFOLD_CACHE_SIZE];
@@ -163,7 +163,7 @@ public:
 			//get rid of duplicated userPersistentData pointer
 			m_pointCache[lastUsedIndex].m_userPersistentData = 0;
 			m_pointCache[lastUsedIndex].m_appliedImpulse = 0.f;
-			m_pointCache[lastUsedIndex].m_lateralFrictionInitialized = false;
+			m_pointCache[lastUsedIndex].m_contactPointFlags = 0;
 			m_pointCache[lastUsedIndex].m_appliedImpulseLateral1 = 0.f;
 			m_pointCache[lastUsedIndex].m_appliedImpulseLateral2 = 0.f;
 			m_pointCache[lastUsedIndex].m_lifeTime = 0;
@@ -190,16 +190,11 @@ public:
 		void* cache = m_pointCache[insertIndex].m_userPersistentData;
 		
 		m_pointCache[insertIndex] = newPoint;
-
 		m_pointCache[insertIndex].m_userPersistentData = cache;
 		m_pointCache[insertIndex].m_appliedImpulse = appliedImpulse;
 		m_pointCache[insertIndex].m_appliedImpulseLateral1 = appliedLateralImpulse1;
 		m_pointCache[insertIndex].m_appliedImpulseLateral2 = appliedLateralImpulse2;
 		
-		m_pointCache[insertIndex].m_appliedImpulse =  appliedImpulse;
-		m_pointCache[insertIndex].m_appliedImpulseLateral1 = appliedLateralImpulse1;
-		m_pointCache[insertIndex].m_appliedImpulseLateral2 = appliedLateralImpulse2;
-
 
 		m_pointCache[insertIndex].m_lifeTime = lifeTime;
 #else

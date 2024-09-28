@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 var audioCreateSource = new Atomic.UIMenuItemSource();
@@ -28,27 +43,33 @@ var geometryCreateSource = new Atomic.UIMenuItemSource();
 geometryCreateSource.addItem(new Atomic.UIMenuItem("StaticModel", "StaticModel"));
 geometryCreateSource.addItem(new Atomic.UIMenuItem("AnimatedModel", "AnimatedModel"));
 geometryCreateSource.addItem(new Atomic.UIMenuItem("AnimationController", "AnimationController"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("BillboardSet", "create component"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("CustomGeometry", "create component"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("ParticleEmitter", "create component"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("BillboardSet", "BillboardSet"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("CustomGeometry", "CustomGeometry"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("ParticleEmitter", "ParticleEmitter"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("RibbonTrail", "RibbonTrail"));
 geometryCreateSource.addItem(new Atomic.UIMenuItem("Skybox", "SkyBox"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("StaticModelGroup", "create component"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("Terrain", "create component"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("StaticModelGroup", "StaticModelGroup"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("Terrain", "Terrain"));
 geometryCreateSource.addItem(new Atomic.UIMenuItem("Text3D", "create component"));
-geometryCreateSource.addItem(new Atomic.UIMenuItem("Water", "create component"));
+geometryCreateSource.addItem(new Atomic.UIMenuItem("Water", "Water"));
 
 var logicCreateSource = new Atomic.UIMenuItemSource();
 
 logicCreateSource.addItem(new Atomic.UIMenuItem("JSComponent", "JSComponent"));
 logicCreateSource.addItem(new Atomic.UIMenuItem("CSComponent", "CSComponent"));
-logicCreateSource.addItem(new Atomic.UIMenuItem("AnimationController", "create component"));
-logicCreateSource.addItem(new Atomic.UIMenuItem("SplinePath", "create component"));
+logicCreateSource.addItem(new Atomic.UIMenuItem("AnimationController", "AnimationController"));
+logicCreateSource.addItem(new Atomic.UIMenuItem("SplinePath", "SplinePath"));
 
 var navigationCreateSource = new Atomic.UIMenuItemSource();
 
-navigationCreateSource.addItem(new Atomic.UIMenuItem("Navigable", "create component"));
-navigationCreateSource.addItem(new Atomic.UIMenuItem("NavigationMesh", "create component"));
-navigationCreateSource.addItem(new Atomic.UIMenuItem("OffMeshConnection", "create component"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("CrowdAgent", "CrowdAgent"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("CrowdManager", "CrowdManager"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("NavArea", "NavArea"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("Navigable", "Navigable"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("NavigationMesh", "NavigationMesh"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("DynamicNavigationMesh", "DynamicNavigationMesh"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("Obstacle", "Obstacle"));
+navigationCreateSource.addItem(new Atomic.UIMenuItem("OffMeshConnection", "OffMeshConnection"));
 
 var networkCreateSource = new Atomic.UIMenuItemSource();
 
@@ -57,7 +78,7 @@ networkCreateSource.addItem(new Atomic.UIMenuItem("Network Priority", "create co
 var physicsCreateSource = new Atomic.UIMenuItemSource();
 
 physicsCreateSource.addItem(new Atomic.UIMenuItem("CollisionShape", "CollisionShape"));
-physicsCreateSource.addItem(new Atomic.UIMenuItem("Constraint", "create component"));
+physicsCreateSource.addItem(new Atomic.UIMenuItem("Constraint", "Constraint"));
 physicsCreateSource.addItem(new Atomic.UIMenuItem("RigidBody", "RigidBody"));
 
 var sceneCreateSource = new Atomic.UIMenuItemSource();
@@ -90,7 +111,7 @@ var sources = {
     Scene: sceneCreateSource,
     SubSystem: subsystemCreateSource,
     Editor : editorCreateSource
-}
+};
 
 for (var sub in sources) {
 
@@ -112,7 +133,7 @@ class CreateComponentButton extends Atomic.UIButton {
 
         this.text = "Create Component";
 
-        this.subscribeToEvent("WidgetEvent", (data) => this.handleWidgetEvent(data));
+        this.subscribeToEvent(Atomic.UIWidgetEvent((data) => this.handleWidgetEvent(data)));
 
     }
 
@@ -122,16 +143,16 @@ class CreateComponentButton extends Atomic.UIButton {
         var menu = new Atomic.UIMenuWindow(this, "create component popup");
         menu.fontDescription = this.fd;
         menu.show(componentCreateSource);
-    }
+    };
 
     handleWidgetEvent(ev: Atomic.UIWidgetEvent) {
 
-        if (ev.type != Atomic.UI_EVENT_TYPE_CLICK)
+        if (ev.type != Atomic.UI_EVENT_TYPE.UI_EVENT_TYPE_CLICK)
             return;
 
         if (ev.target && ev.target.id == "create component popup") {
 
-            this.sendEvent("SelectionCreateComponent", { componentTypeName : ev.refid});
+            this.sendEvent(Editor.SelectionCreateComponentEventData({ componentTypeName : ev.refid}));
 
             return true;
 

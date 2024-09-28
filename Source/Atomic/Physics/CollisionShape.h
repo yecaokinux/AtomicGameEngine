@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -62,14 +62,13 @@ enum ShapeType
 /// Base class for collision shape geometry data.
 struct CollisionGeometryData : public RefCounted
 {
-    REFCOUNTED(CollisionGeometryData)
+    ATOMIC_REFCOUNTED(CollisionGeometryData)
+
 };
 
 /// Triangle mesh geometry data.
 struct TriangleMeshData : public CollisionGeometryData
 {
-    REFCOUNTED(TriangleMeshData)
-
     /// Construct from a model.
     TriangleMeshData(Model* model, unsigned lodLevel);
     /// Construct from a custom geometry.
@@ -78,18 +77,16 @@ struct TriangleMeshData : public CollisionGeometryData
     ~TriangleMeshData();
 
     /// Bullet triangle mesh interface.
-    TriangleMeshInterface* meshInterface_;
+    UniquePtr<TriangleMeshInterface> meshInterface_;
     /// Bullet triangle mesh collision shape.
-    btBvhTriangleMeshShape* shape_;
+    UniquePtr<btBvhTriangleMeshShape> shape_;
     /// Bullet triangle info map.
-    btTriangleInfoMap* infoMap_;
+    UniquePtr<btTriangleInfoMap> infoMap_;
 };
 
 /// Convex hull geometry data.
 struct ConvexData : public CollisionGeometryData
 {
-    REFCOUNTED(ConvexData)
-
     /// Construct from a model.
     ConvexData(Model* model, unsigned lodLevel);
     /// Construct from a custom geometry.
@@ -113,8 +110,6 @@ struct ConvexData : public CollisionGeometryData
 /// Heightfield geometry data.
 struct HeightfieldData : public CollisionGeometryData
 {
-    REFCOUNTED(HeightfieldData)
-
     /// Construct from a terrain.
     HeightfieldData(Terrain* terrain, unsigned lodLevel);
     /// Destruct. Free geometry data.
@@ -135,7 +130,7 @@ struct HeightfieldData : public CollisionGeometryData
 /// Physics collision shape component.
 class ATOMIC_API CollisionShape : public Component
 {
-    OBJECT(CollisionShape);
+    ATOMIC_OBJECT(CollisionShape, Component);
 
 public:
     /// Construct.
@@ -203,7 +198,7 @@ public:
     void SetLodLevel(unsigned lodLevel);
 
     /// Return Bullet collision shape.
-    btCollisionShape* GetCollisionShape() const { return shape_; }
+    btCollisionShape* GetCollisionShape() const { return shape_.Get(); }
 
     /// Return the shared geometry data.
     CollisionGeometryData* GetGeometryData() const { return geometry_; }
@@ -251,6 +246,14 @@ protected:
     virtual void OnSceneSet(Scene* scene);
     /// Handle node transform being dirtied.
     virtual void OnMarkedDirty(Node* node);
+    /**
+     * Called when instantiating a collision shape that is not one of ShapeType (default no-op).
+     *
+     * Useful for custom shape types that subclass CollisionShape and use a non-standard underlying
+     * btCollisionShape. UpdateDerivedShape can then be overridden to create the required
+     * btCollisionShape subclass.
+     */
+    virtual btCollisionShape* UpdateDerivedShape(int shapeType, const Vector3& newWorldScale);
 
 private:
     /// Find the parent rigid body component and return its compound collision shape.
@@ -271,7 +274,7 @@ private:
     /// Shared geometry data.
     SharedPtr<CollisionGeometryData> geometry_;
     /// Bullet collision shape.
-    btCollisionShape* shape_;
+    UniquePtr<btCollisionShape> shape_;
     /// Collision shape type.
     ShapeType shapeType_;
     /// Offset position.
@@ -284,7 +287,7 @@ private:
     Vector3 cachedWorldScale_;
     /// Model LOD level.
     unsigned lodLevel_;
-    /// CustomGeometry component ID for convex hull mode. 0 if not creating the convex hull from a CustomGeometry.
+    /// CustomGeometry component ID. 0 if not creating the convex hull / triangle mesh from a CustomGeometry.
     unsigned customGeometryID_;
     /// Collision margin.
     float margin_;

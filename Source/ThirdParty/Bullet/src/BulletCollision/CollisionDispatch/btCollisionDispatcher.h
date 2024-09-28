@@ -16,13 +16,13 @@ subject to the following restrictions:
 #ifndef BT_COLLISION__DISPATCHER_H
 #define BT_COLLISION__DISPATCHER_H
 
-#include "../../BulletCollision/BroadphaseCollision/btDispatcher.h"
-#include "../../BulletCollision/NarrowPhaseCollision/btPersistentManifold.h"
+#include "BulletCollision/BroadphaseCollision/btDispatcher.h"
+#include "BulletCollision/NarrowPhaseCollision/btPersistentManifold.h"
 
-#include "../../BulletCollision/CollisionDispatch/btManifoldResult.h"
+#include "BulletCollision/CollisionDispatch/btManifoldResult.h"
 
-#include "../../BulletCollision/BroadphaseCollision/btBroadphaseProxy.h"
-#include "../../LinearMath/btAlignedObjectArray.h"
+#include "BulletCollision/BroadphaseCollision/btBroadphaseProxy.h"
+#include "LinearMath/btAlignedObjectArray.h"
 
 class btIDebugDraw;
 class btOverlappingPairCache;
@@ -57,7 +57,9 @@ protected:
 
 	btPoolAllocator*	m_persistentManifoldPoolAllocator;
 
-	btCollisionAlgorithmCreateFunc* m_doubleDispatch[MAX_BROADPHASE_COLLISION_TYPES][MAX_BROADPHASE_COLLISION_TYPES];
+	btCollisionAlgorithmCreateFunc* m_doubleDispatchContactPoints[MAX_BROADPHASE_COLLISION_TYPES][MAX_BROADPHASE_COLLISION_TYPES];
+
+	btCollisionAlgorithmCreateFunc* m_doubleDispatchClosestPoints[MAX_BROADPHASE_COLLISION_TYPES][MAX_BROADPHASE_COLLISION_TYPES];
 
 	btCollisionConfiguration*	m_collisionConfiguration;
 
@@ -83,6 +85,8 @@ public:
 
 	///registerCollisionCreateFunc allows registration of custom/alternative collision create functions
 	void	registerCollisionCreateFunc(int proxyType0,int proxyType1, btCollisionAlgorithmCreateFunc* createFunc);
+
+	void	registerClosestPointsCreateFunc(int proxyType0, int proxyType1, btCollisionAlgorithmCreateFunc *createFunc);
 
 	int	getNumManifolds() const
 	{ 
@@ -115,7 +119,7 @@ public:
 
 	virtual void clearManifold(btPersistentManifold* manifold);
 
-	btCollisionAlgorithm* findAlgorithm(const btCollisionObjectWrapper* body0Wrap,const btCollisionObjectWrapper* body1Wrap,btPersistentManifold* sharedManifold = 0);
+	btCollisionAlgorithm* findAlgorithm(const btCollisionObjectWrapper* body0Wrap,const btCollisionObjectWrapper* body1Wrap,btPersistentManifold* sharedManifold, ebtDispatcherQueryType queryType);
 		
 	virtual bool	needsCollision(const btCollisionObject* body0,const btCollisionObject* body1);
 	

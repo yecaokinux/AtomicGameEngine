@@ -32,15 +32,15 @@ namespace Atomic
 class JSVM;
 
 /// Javascript subsystem.
-class ATOMIC_API Javascript : public Object
+class Javascript : public Object
 {
-    OBJECT(Javascript);
+    ATOMIC_OBJECT(Javascript, Object);
 
 public:
     /// Construct.
     Javascript(Context* context);
     /// Destruct.
-    ~Javascript();
+    virtual ~Javascript();
 
     /// Returns NULL if a VM with name already exists
     JSVM* InstantiateVM(const String& name);
@@ -61,6 +61,6 @@ private:
 };
 
 /// Register Javascript library objects.
-void ATOMIC_API RegisterJavascriptLibrary(Context* context);
+void RegisterJavascriptLibrary(Context* context);
 
 }

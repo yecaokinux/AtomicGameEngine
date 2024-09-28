@@ -45,7 +45,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
 #include <vector>
+// Urho3D: VS2008 compatibility
+#if !defined(_MSC_VER) || (_MSC_VER >= 1600)
 #include <stdint.h>
+#else
+#include "../include/assimp/Compiler/pstdint.h"
+#endif
 
 #include "../include/assimp/types.h"
 #include "../include/assimp/quaternion.h"
@@ -129,7 +134,7 @@ struct Mesh
 
     std::vector<Bone> mBones;
 
-    Mesh(const std::string &pName = "") { mName = pName; mNumTextures = 0; mNumColorSets = 0; }
+    explicit Mesh(const std::string &pName = "") { mName = pName; mNumTextures = 0; mNumColorSets = 0; }
 };
 
 /** Helper structure to represent a XFile frame */
@@ -142,7 +147,7 @@ struct Node
     std::vector<Mesh*> mMeshes;
 
     Node() { mParent = NULL; }
-    Node( Node* pParent) { mParent = pParent; }
+    explicit Node( Node* pParent) { mParent = pParent; }
     ~Node()
     {
         for( unsigned int a = 0; a < mChildren.size(); a++)

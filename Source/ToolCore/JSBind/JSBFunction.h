@@ -1,13 +1,29 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
 
 #include <Atomic/IO/Log.h>
+#include "JSBindTypes.h"
 #include "JSBClass.h"
 #include "JSBType.h"
 #include "JSBSymbol.h"
@@ -35,6 +51,12 @@ public:
     {
         if (!other)
             return false;
+
+        if (type_->asStringType() || type_->asStringHashType())
+        {
+           if (other->type_->asStringType() || other->type_->asStringHashType())
+               return true;
+        }
 
         if (isSharedPtr_ != other->isSharedPtr_)
             return false;
@@ -115,40 +137,52 @@ class JSBFunction : public JSBSymbol
 
 public:
 
-    JSBFunction(JSBClass* klass) : class_(klass), returnType_(0),
-                                   isConstructor_(false), isDestructor_(false),
-                                   isGetter_(false), isSetter_(false),
-                                   isOverload_(false), skip_(false), 
-                                   isVirtual_(false), isStatic_(false)
-    {
+    JSBFunction(JSBClass* klass);
 
-    }
-
-    const String& GetName() { return name_; }
+    const String& GetName() const { return name_; }
 
     bool Match(JSBFunction* func);
 
-    bool IsConstructor() { return isConstructor_; }
-    bool IsDestructor() { return isDestructor_; }
-    bool IsSetter() { return isSetter_; }
-    bool IsGetter() { return isGetter_; }
-    bool IsOverload() { return isOverload_; }
-    bool IsVirtual() { return isVirtual_; }
-    bool IsStatic() { return isStatic_; }
-    bool Skip() { return skip_; }
+    // clones function and adds to specified class
+    JSBFunction* Clone(JSBClass* dstClass);
 
-    JSBClass* GetClass() { return class_; }
+    bool IsConstructor() const { return isConstructor_; }
+    bool IsDestructor() const { return isDestructor_; }
+    bool IsSetter() const { return isSetter_; }
+    bool IsGetter() const { return isGetter_; }
+    bool IsOverload() { return isOverload_; }
+    bool IsVirtual() const { return isVirtual_; }
+    bool IsStatic() const { return isStatic_; }
+
+    // get whether this method is inherited from a parent interface
+    bool IsInheritedInterface() const { return isInheritedInterface_; }
+
+    // true if return value has been mutated to be passed in at end of parameters (optimization)
+    bool HasMutatedReturn() const { return hasMutatedReturn_; }
+
+    bool Skip(BindingLanguage language = BINDINGLANGUAGE_ANY) const
+    {
+        if (skip_ || language == BINDINGLANGUAGE_ANY)
+            return skip_;
+
+        return GetSkipLanguage(language);
+    }
+
+    unsigned GetID() const { return id_; }
+
+    JSBClass* GetClass() const { return class_; }
     const String& GetPropertyName() { return propertyName_; }
-    JSBFunctionType* GetReturnType() { return returnType_; }
+    JSBFunctionType* GetReturnType() const { return returnType_; }
 
     /// Get class return type or null
     JSBClass* GetReturnClass();
 
-    Vector<JSBFunctionType*>& GetParameters() { return parameters_; }
+    const Vector<JSBFunctionType*>& GetParameters() const { return parameters_; }
 
-    const String& GetDocString() { return docString_; }
+    const String& GetDocString() const { return docString_; }
 
     void SetName(const String& name) { name_ = name; }
+    void SetClass(JSBClass* klass) { class_ = klass; }
     void SetConstructor(bool value = true) { isConstructor_ = value; }
     void SetDestructor(bool value = true) { isDestructor_ = value; }
     void SetSetter(bool value = true) { isSetter_ = value; }
@@ -158,7 +192,33 @@ public:
     void SetStatic(bool value = true) { isStatic_ = value; }
     void SetSkip(bool value) { skip_ = value; }
     void SetReturnType(JSBFunctionType* retType) { returnType_ = retType; }
+    void SetInheritedInterface(bool interface) { isInheritedInterface_ = interface; }
     void SetDocString(const String& docString) { docString_ = docString; }
+
+    void SetSkipLanguage(BindingLanguage language, bool skip = true)
+    {
+        if (skip)
+        {
+            if (!skipLanguages_.Contains(language))
+                skipLanguages_.Push(language);
+        }
+        else
+        {
+            if (skipLanguages_.Contains(language))
+                skipLanguages_.Remove(language);
+
+        }
+    }
+
+    /// Returns true is _skip is set or skip is set for specific binding language
+    bool GetSkipLanguage(BindingLanguage language) const
+    {
+        if (skip_)
+            return true;
+
+        return skipLanguages_.Contains(language);
+
+    }
 
     int FirstDefaultParameter()
     {
@@ -187,7 +247,7 @@ public:
 
     void Dump()
     {
-        String sig;
+        String sig = ToString("Function ID: %u - ", id_);
         if (!returnType_)
             sig += "void ";
         else
@@ -205,11 +265,27 @@ public:
         }
         sig += ");";
 
-        LOGINFOF("      %s", sig.CString());
+        String skipText;
+
+        if (GetSkipLanguage(BINDINGLANGUAGE_CSHARP))
+            skipText += "C#";
+
+        if (GetSkipLanguage(BINDINGLANGUAGE_JAVASCRIPT))
+            skipText += " JavaScript";
+
+        if (skipText.Length())
+        {
+            sig += ToString(" (Skipped: %s)", skipText.CString());
+        }
+
+        ATOMIC_LOGINFOF("      %s", sig.CString());
 
     }
 
 private:
+
+    unsigned id_;
+    static unsigned idCounter_;
 
     SharedPtr<JSBClass> class_;
 
@@ -221,6 +297,8 @@ private:
 
     String docString_;
 
+    bool isInheritedInterface_;
+
     bool isConstructor_;
     bool isDestructor_;
     bool isGetter_;
@@ -228,8 +306,9 @@ private:
     bool isOverload_;
     bool isVirtual_;
     bool isStatic_;
-    bool skip_;
-
+    bool hasMutatedReturn_;
+    bool skip_;    
+    PODVector<BindingLanguage> skipLanguages_;
 };
 
 }

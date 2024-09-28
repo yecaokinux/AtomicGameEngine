@@ -1,12 +1,7 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
-//
-
-//
 // Copyright (c) 2008-2015 the Urho3D project.
+//
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,10 +22,6 @@
 // THE SOFTWARE.
 //
 
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// Please see LICENSE.md in repository root for license information
-// https://github.com/AtomicGameEngine/AtomicGameEngine
-
 #pragma once
 
 #include "OpenAssetUtils.h"
@@ -45,7 +36,7 @@ namespace ToolCore
 
 class OpenAssetImporter : public Object
 {
-    OBJECT(OpenAssetImporter);
+    ATOMIC_OBJECT(OpenAssetImporter, Object);
 
 public:
 
@@ -69,8 +60,13 @@ public:
     void SetEndTime(float endTime) { endTime_ = endTime; }
     void SetScale(float scale) { scale_ = scale; }
     void SetExportAnimations(bool exportAnimations) { noAnimations_ = !exportAnimations; }
-
+    void SetImportMaterials(bool importMaterials) { importMaterials_ = importMaterials; }
+    void SetIncludeNonSkinningBones(bool includeNonSkinningBones) { includeNonSkinningBones_ = includeNonSkinningBones; }
     void SetVerboseLog(bool verboseLog) { verboseLog_ = verboseLog; }
+
+    bool GetImportMaterialsDefault() { return importMaterialsDefault_; }
+
+    bool GetIncludeNonSkinningBones() { return includeNonSkinningBonesDefault_; }
 
     const Vector<AnimationInfo>& GetAnimationInfos() { return animationInfos_; }
 
@@ -90,6 +86,10 @@ private:
     void CollectBonesFinal(PODVector<aiNode*>& dest, const HashSet<aiNode*>& necessary, aiNode* node);
     void BuildBoneCollisionInfo(OutModel& model);
     void CollectAnimations(OutModel* model = 0);
+
+    void ApplyProjectImportConfig();
+    void SetOveriddenFlags(VariantMap& aiFlagParameters);
+    void ApplyFlag(int processStep, bool active);
 
     String GetMeshMaterialName(aiMesh* mesh);
     String GenerateMaterialName(aiMaterial* material);
@@ -111,6 +111,8 @@ private:
     String resourcePath_;
     String outPath_;
     bool useSubdirs_;
+    bool importMaterials_;
+    bool importMaterialsDefault_;
     bool localIDs_;
     bool saveBinary_;
     bool createZone_;
@@ -122,12 +124,14 @@ private:
     bool noEmptyNodes_;
     bool saveMaterialList_;
     bool includeNonSkinningBones_;
+    bool includeNonSkinningBonesDefault_;
     bool verboseLog_;
     bool emissiveAO_;
     bool noOverwriteMaterial_;
     bool noOverwriteTexture_;
     bool noOverwriteNewerTexture_;
     bool checkUniqueModel_;
+    bool useVertexColors_;
     float scale_;
     unsigned maxBones_;
 

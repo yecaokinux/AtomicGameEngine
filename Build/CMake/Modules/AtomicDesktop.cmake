@@ -1,7 +1,14 @@
-include_directories(${CMAKE_SOURCE_DIR}/Source/ThirdParty/Poco/Foundation/include)
+set(ATOMIC_DESKTOP TRUE)
 
-add_definitions( -DATOMIC_TBUI -DATOMIC_FILEWATCHER -DPOCO_NO_AUTOMATIC_LIBS -DPOCO_STATIC )
-
-set (ATOMIC_LINK_LIBRARIES ${ATOMIC_LINK_LIBRARIES} LibCpuId SQLite)
-
-include(AtomicNET)
+# Check whether the CEF submodule is available
+if (NOT MINGW)
+    if (NOT DEFINED ATOMIC_WEBVIEW)
+        set (ATOMIC_WEBVIEW ON)
+    endif ()
+    if (ATOMIC_WEBVIEW)
+        initialize_submodule(Submodules/CEF ATOMIC_WEBVIEW)
+        if (ATOMIC_WEBVIEW)
+            add_definitions(-DATOMIC_WEBVIEW)
+        endif ()
+    endif ()
+endif ()

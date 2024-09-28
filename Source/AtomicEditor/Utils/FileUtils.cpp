@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Poco/File.h>
@@ -31,8 +46,14 @@ String FileUtils::OpenProjectFileDialog()
 {
     nfdchar_t *outPath = NULL;
 
+    String upath;
+
+#ifdef ATOMIC_PLATFORM_LINUX
+    upath = GetSubsystem<FileSystem>()->GetUserDocumentsDir();
+#endif
+
     nfdresult_t result = NFD_OpenDialog( "atomic",
-                                NULL,
+                                upath.Length() ? GetNativePath(upath).CString() : "",
                                 &outPath);
 
     String fullpath;
@@ -69,10 +90,13 @@ String FileUtils::NewProjectFileDialog()
 
     nfdchar_t *outPath = NULL;
 
-    nfdresult_t result = NFD_ChooseDirectory( "Please choose the root folder for your project",
-                                NULL,
-                                &outPath);
+    String upath;
+    
+#ifdef ATOMIC_PLATFORM_LINUX
+    upath = GetSubsystem<FileSystem>()->GetUserDocumentsDir();
+#endif
 
+    nfdresult_t result = NFD_PickFolder(upath.Length() ? GetNativePath(upath).CString() : "", &outPath);
 
     if (outPath && result == NFD_OKAY)
     {
@@ -93,10 +117,8 @@ String FileUtils::GetBuildPath(const String& defaultPath)
     String buildPath;
 
     nfdchar_t *outPath = NULL;
-
-    nfdresult_t result = NFD_ChooseDirectory( "Please choose the build folder",
-                                defaultPath.Length() ? defaultPath.CString() : NULL,
-                                &outPath);
+    
+    nfdresult_t result = NFD_PickFolder(defaultPath.Length() ? GetNativePath(defaultPath).CString() : "", &outPath);
 
     if (outPath && result == NFD_OKAY)
     {
@@ -112,45 +134,13 @@ String FileUtils::GetBuildPath(const String& defaultPath)
 
 }
 
-String FileUtils::GetAndroidSDKPath(const String& defaultPath)
-{
-    String sdkPath;
-
-    nfdchar_t *outPath = NULL;
-
-    nfdresult_t result = NFD_ChooseDirectory( "Please choose the root folder of your Android SDK",
-                                defaultPath.Length() ? defaultPath.CString() : NULL,
-                                &outPath);
-
-    if (outPath && result == NFD_OKAY)
-    {
-        sdkPath = outPath;
-    }
-
-    if (outPath)
-        free(outPath);
-
-    GetSubsystem<Graphics>()->RaiseWindow();
-
-    return GetInternalPath(sdkPath);
-
-}
-
 String FileUtils::GetAntPath(const String& defaultPath)
 {
     String antPath;
 
     nfdchar_t *outPath = NULL;
 
-#ifdef ATOMIC_PLATFORM_WINDOWS
-    String msg = "Please select the folder which contains ant.bat";
-#else
-    String msg = "Please select the folder which contains the ant executable";
-#endif
-
-    nfdresult_t result = NFD_ChooseDirectory(msg.CString(),
-        defaultPath.Length() ? defaultPath.CString() : NULL,
-        &outPath);
+    nfdresult_t result = NFD_PickFolder(defaultPath.Length() ? GetNativePath(defaultPath).CString() : "", &outPath);
 
     if (outPath && result == NFD_OKAY)
     {
@@ -165,36 +155,12 @@ String FileUtils::GetAntPath(const String& defaultPath)
     return GetInternalPath(antPath);
 }
 
-String FileUtils::GetJDKRootPath(const String& defaultPath)
-{
-    String jdkPath;
-
-    nfdchar_t *outPath = NULL;
-
-    nfdresult_t result = NFD_ChooseDirectory("Please choose the root folder of your JDK",
-        defaultPath.Length() ? defaultPath.CString() : NULL,
-        &outPath);
-
-    if (outPath && result == NFD_OKAY)
-    {
-        jdkPath = outPath;
-    }
-
-    if (outPath)
-        free(outPath);
-
-    GetSubsystem<Graphics>()->RaiseWindow();
-
-    return GetInternalPath(jdkPath);
-
-}
-
 String FileUtils::GetMobileProvisionPath()
 {
     nfdchar_t *outPath = NULL;
 
     nfdresult_t result = NFD_OpenDialog( "mobileprovision",
-                                NULL,
+                                "",
                                 &outPath);
 
     String fullpath;
@@ -224,5 +190,46 @@ void FileUtils::RevealInFinder(const String& fullpath)
         fs->SystemOpen(GetPath(fullpath));
 }
 
+String FileUtils::FindPath(const String& title, const String& defaultPath)
+{
+    String resultPath;
+    nfdchar_t *outPath = NULL;
+
+    nfdresult_t result = NFD_PickFolder(defaultPath.Length() ? GetNativePath(defaultPath).CString() : "", &outPath);
+
+    if (outPath && result == NFD_OKAY)
+    {
+        resultPath = outPath;
+    }
+
+    if (outPath)
+        free(outPath);
+
+    GetSubsystem<Graphics>()->RaiseWindow();
+
+    return GetInternalPath(resultPath);
+}
+
+String FileUtils::FindFile (const String& filterlist, const String& defaultPath)
+{
+    String fullpath;
+    nfdchar_t *outPath = NULL;
+
+    nfdresult_t result = NFD_OpenDialog( filterlist.CString(),
+        defaultPath.Length() ? GetNativePath(defaultPath).CString() : "",
+        &outPath);
+
+    if (outPath && result == NFD_OKAY)
+    {
+        fullpath = outPath;
+    }
+
+    GetSubsystem<Graphics>()->RaiseWindow();
+
+    if (outPath)
+        free(outPath);
+
+    return fullpath;
+}
 
 }

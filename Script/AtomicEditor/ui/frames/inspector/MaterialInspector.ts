@@ -1,12 +1,26 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 import ScriptWidget = require("ui/ScriptWidget");
-import UIEvents = require("ui/UIEvents");
 import EditorUI = require("ui/EditorUI");
 
 import TextureSelector = require("./TextureSelector");
@@ -35,17 +49,8 @@ var lightmapSource = new Atomic.UIMenuItemSource();
 lightmapSource.addItem(new Atomic.UIMenuItem("Lightmap", "Lightmap"));
 lightmapSource.addItem(new Atomic.UIMenuItem("Lightmap Alpha", "Lightmap Alpha"));
 
-var _ = new Atomic.UIMenuItem("Solid");
-_.subSource = solidSource;
-techniqueSource.addItem(_);
-
-_ = new Atomic.UIMenuItem("Transparency");
-_.subSource = tranSource;
-techniqueSource.addItem(_);
-
-_ = new Atomic.UIMenuItem("Lightmap");
-_.subSource = lightmapSource;
-techniqueSource.addItem(_);
+var projectSource = new Atomic.UIMenuItemSource();
+var _ = new Atomic.UIMenuItem();
 
 var techniqueLookup = {
     "Techniques/Diff.xml": "Diffuse",
@@ -57,10 +62,14 @@ var techniqueLookup = {
     "Techniques/DiffAlpha.xml": "Alpha",
     "Techniques/DiffAlphaMask.xml": "Alpha Mask",
     "Techniques/DiffAdd.xml": "Additive",
-    "Techniques/NoTexture.xml": "No Texture"
-}
+    "Techniques/NoTexture.xml": "No Texture",
+    "Techniques/DiffLightMap.xml": "Lightmap",
+    "Techniques/DiffLightMapAlpha.xml": "Lightmap Alpha"
+};
 
 var techniqueReverseLookup = {};
+var projectTechniques = {};
+var projectTechniquesAddress = {};
 
 for (var key in techniqueLookup) {
 
@@ -68,8 +77,11 @@ for (var key in techniqueLookup) {
 
 }
 
-
 class MaterialInspector extends ScriptWidget {
+
+    currentTexture: Atomic.UITextureWidget = null;
+    tunit: number;
+    textureWidget: Atomic.UITextureWidget;
 
     constructor() {
 
@@ -78,7 +90,7 @@ class MaterialInspector extends ScriptWidget {
         this.fd.id = "Vera";
         this.fd.size = 11;
 
-
+        this.subscribeToEvent(ToolCore.ResourceAddedEvent((ev: ToolCore.ResourceAddedEvent) => this.refreshTechniquesPopup()));
     }
 
     createShaderParametersSection(): Atomic.UISection {
@@ -88,10 +100,10 @@ class MaterialInspector extends ScriptWidget {
         section.value = 1;
         section.fontDescription = this.fd;
 
-        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS_Y);
+        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS.UI_AXIS_Y);
         attrsVerticalLayout.spacing = 3;
-        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION_LEFT_TOP;
-        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE_AVAILABLE;
+        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION.UI_LAYOUT_POSITION_LEFT_TOP;
+        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE.UI_LAYOUT_SIZE_AVAILABLE;
 
         section.contentRoot.addChild(attrsVerticalLayout);
 
@@ -100,10 +112,10 @@ class MaterialInspector extends ScriptWidget {
         for (var i in params) {
 
             var attrLayout = new Atomic.UILayout();
-            attrLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION_GRAVITY;
+            attrLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION.UI_LAYOUT_DISTRIBUTION_GRAVITY;
 
             var name = new Atomic.UITextField();
-            name.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
+            name.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
             name.skinBg = "InspectorTextAttrName";
 
             name.text = params[i].name;
@@ -112,8 +124,8 @@ class MaterialInspector extends ScriptWidget {
             attrLayout.addChild(name);
 
             var field = new Atomic.UIEditField();
-            field.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
-            field.skinBg = "TBAttrEditorField";;
+            field.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
+            field.skinBg = "TBAttrEditorField";
             field.fontDescription = this.fd;
             var lp = new Atomic.UILayoutParams();
             lp.width = 140;
@@ -122,28 +134,24 @@ class MaterialInspector extends ScriptWidget {
             field.id = params[i].name;
             field.text = params[i].valueString;
 
-            field.subscribeToEvent(field, "WidgetEvent", function(ev: Atomic.UIWidgetEvent) {
+            field.subscribeToEvent(field, Atomic.UIWidgetEvent(function (ev: Atomic.UIWidgetEvent) {
 
-                if (ev.type == Atomic.UI_EVENT_TYPE_CHANGED) {
+                if (ev.type == Atomic.UI_EVENT_TYPE.UI_EVENT_TYPE_CHANGED) {
 
-                    var field = <Atomic.UIEditField> ev.target;
+                    var field = <Atomic.UIEditField>ev.target;
                     this.material.setShaderParameter(field.id, field.text);
 
                 }
 
-            }.bind(this));
+            }.bind(this)));
 
             attrLayout.addChild(field);
 
             attrsVerticalLayout.addChild(attrLayout);
 
             // print(params[i].name, " : ", params[i].value, " : ", params[i].type);
-
         }
-
-
         return section;
-
     }
 
     getTextureThumbnail(texture: Atomic.Texture): Atomic.Texture {
@@ -159,7 +167,7 @@ class MaterialInspector extends ScriptWidget {
         var thumbnail = asset.cachePath + "_thumbnail.png";
         var cache = Atomic.getResourceCache();
 
-        var thumb = <Atomic.Texture2D> cache.getTempResource("Texture2D", thumbnail);
+        var thumb = <Atomic.Texture2D>cache.getTempResource("Texture2D", thumbnail);
 
         if (thumb)
             return thumb;
@@ -173,17 +181,39 @@ class MaterialInspector extends ScriptWidget {
         this.techniqueButton.text = techniqueName;
 
         var cache = Atomic.getResourceCache();
-        var technique = <Atomic.Technique> cache.getResource("Technique", techniqueReverseLookup[techniqueName]);
-        this.material.setTechnique(0, technique);
+        var technique = <Atomic.Technique>cache.getResource("Technique", techniqueReverseLookup[techniqueName]);
+        var resourcePath = ToolCore.toolSystem.project.getResourcePath();
 
+        if (technique == null) {
+            var techniquePath = "";
+
+            for (var i in projectTechniques) {
+                if (techniqueName == projectTechniques[i]) {
+                    techniquePath = projectTechniquesAddress[i];
+                    break;
+                }
+            }
+            techniquePath = techniquePath.replace(resourcePath, "");
+            technique = <Atomic.Technique>cache.getResource("Technique", techniquePath);
+        }
+        this.material.setTechnique(0, technique);
     }
 
     createTechniquePopup(): Atomic.UIWidget {
 
+        this.refreshTechniquesPopup();
+
         var button = this.techniqueButton = new Atomic.UIButton();
         var technique = this.material.getTechnique(0);
+        var techniqueName = "";
 
-        button.text = techniqueLookup[technique.name];
+        if (technique != null) {
+            techniqueName = technique.name.replace("Techniques/", "").replace(".xml", "");
+        } else {
+            techniqueName = "UNDEFINED";
+        }
+
+        button.text = techniqueName;
 
         button.fontDescription = this.fd;
 
@@ -191,16 +221,16 @@ class MaterialInspector extends ScriptWidget {
         lp.width = 140;
         button.layoutParams = lp;
 
-        button.onClick = function() {
+        button.onClick = function () {
 
             var menu = new Atomic.UIMenuWindow(button, "technique popup");
 
             menu.fontDescription = this.fd;
             menu.show(techniqueSource);
 
-            button.subscribeToEvent(button, "WidgetEvent", function(ev: Atomic.UIWidgetEvent) {
+            button.subscribeToEvent(button, Atomic.UIWidgetEvent(function (ev: Atomic.UIWidgetEvent) {
 
-                if (ev.type != Atomic.UI_EVENT_TYPE_CLICK)
+                if (ev.type != Atomic.UI_EVENT_TYPE.UI_EVENT_TYPE_CLICK)
                     return;
 
                 if (ev.target && ev.target.id == "technique popup") {
@@ -209,7 +239,7 @@ class MaterialInspector extends ScriptWidget {
 
                 }
 
-            }.bind(this));
+            }.bind(this)));
 
         }.bind(this);
 
@@ -223,7 +253,7 @@ class MaterialInspector extends ScriptWidget {
 
         if (dragObject.object && dragObject.object.typeName == "Asset") {
 
-            var asset = <ToolCore.Asset> dragObject.object;
+            var asset = <ToolCore.Asset>dragObject.object;
 
             if (asset.importerTypeName == importerTypeName) {
                 return asset.importer;
@@ -235,29 +265,67 @@ class MaterialInspector extends ScriptWidget {
 
     }
 
-    createTextureButtonCallback(textureUnit:number, textureWidget:Atomic.UITextureWidget) {
+    openTextureSelectionBox(textureUnit: number, textureWidget: Atomic.UITextureWidget) {
 
-      return  () => {
+        EditorUI.getModelOps().showResourceSelection("Select Texture", "TextureImporter", "Texture2D", function (asset: ToolCore.Asset, args: any) {
 
-        var inspector = this;
-
-        EditorUI.getModelOps().showResourceSelection("Select Texture", "TextureImporter", "Texture2D", function(asset: ToolCore.Asset, args: any) {
-
-            var texture = <Atomic.Texture2D> Atomic.cache.getResource("Texture2D", asset.path);
-
-            if (texture) {
-                inspector.material.setTexture(textureUnit, texture);
-                textureWidget.texture = inspector.getTextureThumbnail(texture);
+            if (asset == null) {
+                this.createTextureRemoveButtonCallback(this.tunit, this.textureWidget);
+                return;
             }
 
-        });
+            var texture = <Atomic.Texture2D>Atomic.cache.getResource("Texture2D", asset.path);
 
-        return true;
+            if (texture) {
+                this.material.setTexture(textureUnit, texture);
+                textureWidget.texture = this.getTextureThumbnail(texture);
+            }
 
-      }
+        }.bind(this));
 
     }
 
+    // Big Texture Button(referenced texture file path in project frame)
+    createTextureButtonCallback(textureUnit: number, textureWidget: Atomic.UITextureWidget) {
+
+        return () => {
+
+            var texture = this.material.getTexture(textureUnit);
+
+            if (textureWidget.getTexture() != null) {
+                this.sendEvent(Editor.InspectorProjectReferenceEventData({ "path": texture.getName() }));
+            } else {
+                this.openTextureSelectionBox(textureUnit, textureWidget);
+            }
+
+            return true;
+
+        };
+
+    }
+
+    // Small Texture Button (Opens texture selection window)
+    createTextureReferenceButtonCallback(textureUnit: number, textureWidget: Atomic.UITextureWidget) {
+
+        return () => {
+            this.tunit = textureUnit;
+            this.textureWidget = textureWidget;
+            this.openTextureSelectionBox(textureUnit, textureWidget);
+            return true;
+        };
+    }
+
+    //Remove Texture Button
+    createTextureRemoveButtonCallback(textureUnit: number, textureWidget: Atomic.UITextureWidget) {
+
+        var texture = this.material.getTexture(textureUnit);
+
+        if (texture != null && textureWidget != null) {
+            textureWidget.setTexture(null);
+            this.material.setTexture(textureUnit, null);
+        }
+
+    }
 
     createTextureSection(): Atomic.UISection {
 
@@ -266,16 +334,15 @@ class MaterialInspector extends ScriptWidget {
         section.value = 1;
         section.fontDescription = this.fd;
 
-        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS_Y);
+        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS.UI_AXIS_Y);
         attrsVerticalLayout.spacing = 3;
-        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION_LEFT_TOP;
-        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE_AVAILABLE;
+        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION.UI_LAYOUT_POSITION_LEFT_TOP;
+        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE.UI_LAYOUT_SIZE_AVAILABLE;
 
         section.contentRoot.addChild(attrsVerticalLayout);
 
         // TODO: Filter on technique
-        var textureUnits = [Atomic.TU_DIFFUSE, Atomic.TU_NORMAL, Atomic.TU_SPECULAR];// ,Atomic.TU_EMISSIVE, Atomic.TU_ENVIRONMENT,
-        //Atomic.TU_CUSTOM1, Atomic.TU_CUSTOM2];
+        var textureUnits = [Atomic.TextureUnit.TU_DIFFUSE, Atomic.TextureUnit.TU_NORMAL, Atomic.TextureUnit.TU_SPECULAR, Atomic.TextureUnit.TU_EMISSIVE];
 
         for (var i in textureUnits) {
 
@@ -284,10 +351,10 @@ class MaterialInspector extends ScriptWidget {
             var tunitName = Atomic.Material.getTextureUnitName(tunit);
 
             var attrLayout = new Atomic.UILayout();
-            attrLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION_GRAVITY;
+            attrLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION.UI_LAYOUT_DISTRIBUTION_GRAVITY;
 
             var name = new Atomic.UITextField();
-            name.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
+            name.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
             name.skinBg = "InspectorTextAttrName";
 
             name.text = tunitName;
@@ -308,34 +375,44 @@ class MaterialInspector extends ScriptWidget {
             textureButton["tunit"] = tunit;
             textureButton["textureWidget"] = textureWidget;
 
+            //Create drop-down buttons to open Texture Selection Dialog Box
+            var textureRefButton = new Atomic.UIButton();
+            textureRefButton.skinBg = "arrow.down";
+            textureRefButton["tunit"] = tunit;
+            textureRefButton["textureWidget"] = textureWidget;
+
             textureButton.onClick = this.createTextureButtonCallback(tunit, textureWidget);
+            textureRefButton.onClick = this.createTextureReferenceButtonCallback(tunit, textureWidget);
 
             textureButton.contentRoot.addChild(textureWidget);
 
             attrLayout.addChild(textureButton);
+            attrLayout.addChild(textureRefButton);
 
             attrsVerticalLayout.addChild(attrLayout);
 
             // handle dropping of texture on widget
-            textureButton.subscribeToEvent(textureButton, "DragEnded", (ev: Atomic.DragEndedEvent) => {
+            textureButton.subscribeToEvent(textureButton, Atomic.DragEndedEvent((ev: Atomic.DragEndedEvent) => {
 
                 var importer = this.acceptAssetDrag("TextureImporter", ev);
 
                 if (importer) {
 
-                    var textureImporter = <ToolCore.TextureImporter> importer;
+                    var textureImporter = <ToolCore.TextureImporter>importer;
                     var asset = textureImporter.asset;
 
-                    var texture = <Atomic.Texture2D> Atomic.cache.getResource("Texture2D", asset.path);
+                    var texture = <Atomic.Texture2D>Atomic.cache.getResource("Texture2D", asset.path);
 
                     if (texture) {
 
                         this.material.setTexture(ev.target["tunit"], texture);
                         (<Atomic.UITextureWidget>ev.target["textureWidget"]).texture = this.getTextureThumbnail(texture);
 
+                        // note, ButtonID has been commented out because it doesn't appear to be used anywhere
+                        this.sendEvent(Editor.InspectorProjectReferenceEventData({ "path": texture.getName() /* "ButtonID": texture.getName() */ }));
                     }
                 }
-            });
+            }));
 
         }
 
@@ -343,9 +420,90 @@ class MaterialInspector extends ScriptWidget {
 
     }
 
+    loadProjectTechniques(directory: string, menuItem: Atomic.UIMenuItemSource) {
 
+        var resourcePath = ToolCore.toolSystem.project.getResourcePath();
+        var TechniqueAssets = ToolCore.getAssetDatabase().getFolderAssets(directory);
+
+        for (var i = 0; i < TechniqueAssets.length; i++) {
+
+            var asset = TechniqueAssets[i];
+
+            if (TechniqueAssets[i].isFolder()) {
+
+                if (this.scanDirectoryForTechniques(asset.path)) {
+
+                    var subfoldersource = new Atomic.UIMenuItemSource();
+                    _ = new Atomic.UIMenuItem(TechniqueAssets[i].name);
+                    _.subSource = subfoldersource;
+                    menuItem.addItem(_);
+
+                    this.loadProjectTechniques(asset.path, subfoldersource);
+                }
+            }
+            else {
+                projectTechniques[i] = TechniqueAssets[i].name;
+                projectTechniquesAddress[i] = TechniqueAssets[i].path;
+                menuItem.addItem(new Atomic.UIMenuItem(projectTechniques[i], projectTechniques[i]));
+            }
+        }
+    }
+
+    scanDirectoryForTechniques(directory: string): boolean {
+
+        var techniqueAssets = ToolCore.getAssetDatabase().getFolderAssets(directory);
+
+        for (var i = 0; i < techniqueAssets.length; i++) {
+
+            var asset = techniqueAssets[i];
+
+            if (techniqueAssets[i].isFolder()) {
+                if (this.scanDirectoryForTechniques(asset.path)) {
+                    return true;
+                }
+            }
+            else if (techniqueAssets[i].getExtension() == ".xml") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    refreshTechniquesPopup() {
+
+        techniqueSource.clear();
+
+        _ = new Atomic.UIMenuItem("Solid");
+        _.subSource = solidSource;
+        techniqueSource.addItem(_);
+
+        _ = new Atomic.UIMenuItem("Transparency");
+        _.subSource = tranSource;
+        techniqueSource.addItem(_);
+
+        _ = new Atomic.UIMenuItem("Lightmap");
+        _.subSource = lightmapSource;
+        techniqueSource.addItem(_);
+
+        var projectTechniquesPath = ToolCore.toolSystem.project.getResourcePath() + "Techniques";
+
+        if (Atomic.fileSystem.dirExists(projectTechniquesPath)) {
+
+            if (this.scanDirectoryForTechniques(projectTechniquesPath)) {
+
+                projectSource.clear();
+
+                _ = new Atomic.UIMenuItem("Project");
+                _.subSource = projectSource;
+                techniqueSource.addItem(_);
+
+                this.loadProjectTechniques(projectTechniquesPath, projectSource);
+            }
+        }
+    }
 
     inspect(asset: ToolCore.Asset, material: Atomic.Material) {
+        // Add folders to resource directory
 
         this.asset = asset;
         this.material = material;
@@ -356,10 +514,10 @@ class MaterialInspector extends ScriptWidget {
         var materialLayout = new Atomic.UILayout();
         materialLayout.spacing = 4;
 
-        materialLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION_GRAVITY;
-        materialLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION_LEFT_TOP;
+        materialLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION.UI_LAYOUT_DISTRIBUTION_GRAVITY;
+        materialLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION.UI_LAYOUT_POSITION_LEFT_TOP;
         materialLayout.layoutParams = mlp;
-        materialLayout.axis = Atomic.UI_AXIS_Y;
+        materialLayout.axis = Atomic.UI_AXIS.UI_AXIS_Y;
 
         // node attr layout
 
@@ -369,17 +527,17 @@ class MaterialInspector extends ScriptWidget {
         materialSection.fontDescription = this.fd;
         materialLayout.addChild(materialSection);
 
-        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS_Y);
+        var attrsVerticalLayout = new Atomic.UILayout(Atomic.UI_AXIS.UI_AXIS_Y);
         attrsVerticalLayout.spacing = 3;
-        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION_LEFT_TOP;
-        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE_PREFERRED;
+        attrsVerticalLayout.layoutPosition = Atomic.UI_LAYOUT_POSITION.UI_LAYOUT_POSITION_LEFT_TOP;
+        attrsVerticalLayout.layoutSize = Atomic.UI_LAYOUT_SIZE.UI_LAYOUT_SIZE_PREFERRED;
 
         // NAME
         var nameLayout = new Atomic.UILayout();
-        nameLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION_GRAVITY;
+        nameLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION.UI_LAYOUT_DISTRIBUTION_GRAVITY;
 
         var name = new Atomic.UITextField();
-        name.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
+        name.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
         name.skinBg = "InspectorTextAttrName";
 
         name.text = "Name";
@@ -388,8 +546,8 @@ class MaterialInspector extends ScriptWidget {
         nameLayout.addChild(name);
 
         var field = new Atomic.UIEditField();
-        field.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
-        field.skinBg = "TBAttrEditorField";;
+        field.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
+        field.skinBg = "TBAttrEditorField";
         field.fontDescription = this.fd;
         var lp = new Atomic.UILayoutParams();
         lp.width = 160;
@@ -404,11 +562,11 @@ class MaterialInspector extends ScriptWidget {
         // TECHNIQUE LAYOUT
 
         var techniqueLayout = new Atomic.UILayout();
-        techniqueLayout.layoutSize = Atomic.UI_LAYOUT_SIZE_GRAVITY;
-        techniqueLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION_PREFERRED;
+        techniqueLayout.layoutSize = Atomic.UI_LAYOUT_SIZE.UI_LAYOUT_SIZE_GRAVITY;
+        techniqueLayout.layoutDistribution = Atomic.UI_LAYOUT_DISTRIBUTION.UI_LAYOUT_DISTRIBUTION_PREFERRED;
 
         name = new Atomic.UITextField();
-        name.textAlign = Atomic.UI_TEXT_ALIGN_LEFT;
+        name.textAlign = Atomic.UI_TEXT_ALIGN.UI_TEXT_ALIGN_LEFT;
         name.skinBg = "InspectorTextAttrName";
 
         name.text = "Technique";
@@ -429,12 +587,12 @@ class MaterialInspector extends ScriptWidget {
 
         var button = new Atomic.UIButton();
         button.fontDescription = this.fd;
-        button.gravity = Atomic.UI_GRAVITY_RIGHT;
+        button.gravity = Atomic.UI_GRAVITY.UI_GRAVITY_RIGHT;
         button.text = "Save";
 
-        button.onClick = function() {
+        button.onClick = function () {
 
-            var importer = <ToolCore.MaterialImporter> this.asset.getImporter();
+            var importer = <ToolCore.MaterialImporter>this.asset.getImporter();
             importer.saveMaterial();
 
         }.bind(this);

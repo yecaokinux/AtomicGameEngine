@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <TurboBadger/tb_tab_container.h>
@@ -61,7 +76,7 @@ public:
 
     bool OnEvent(const TBWidgetEvent &ev)
     {
-        if (ev.type == EVENT_TYPE_CLICK || ev.type == EVENT_TYPE_POINTER_DOWN)
+        if (ev.type == EVENT_TYPE_CLICK)
         {
             if (ev.target->GetID() == TBIDC("unsaved_modifications_dialog"))
             {
@@ -70,7 +85,7 @@ public:
                     container_->OnEvent(ev);
                     editor_->Close(container_->GetNumPages()>1);
                 }
-                else if (ev.ref_id == TBIDC("cancel"))
+                else if (ev.ref_id == TBIDC("TBMessageWindow.cancel"))
                 {
                     editor_->SendEvent(E_EDITORRESOURCECLOSECANCELED);
                     SetFocus(WIDGET_FOCUS_REASON_UNKNOWN);
@@ -83,29 +98,31 @@ public:
                 }
                 return true;
             }
-            if (ev.target->GetID() == TBIDC("tabclose"))
+            else if (ev.target->GetID() == TBIDC("tabclose"))
             {
                 if (RequestClose())
                 {
                     container_->OnEvent(ev);
-                    return true;
                 }
+
+                return true;
             }
-            else 
+            else
             {
                 TBWidgetEvent nevent = ev;
                 nevent.target = this;
-                container_->OnEvent(nevent);
+                return container_->OnEvent(nevent);
             }
         }
 
         return false;
     }
+
 };
 
 ResourceEditor::ResourceEditor(Context* context, const String& fullpath, UITabContainer *container):
     Object(context), fullpath_(fullpath), container_(container),
-    editorTabLayout_(0), rootContentWidget_(0), button_(0), modified_(false)
+    editorTabLayout_(nullptr), rootContentWidget_(nullptr), button_(nullptr), modified_(false)
 {
 
     String filename = GetFileNameAndExtension(fullpath_);
@@ -137,7 +154,9 @@ ResourceEditor::ResourceEditor(Context* context, const String& fullpath, UITabCo
     rootContentWidget_->SetGravity(UI_GRAVITY_ALL);
     container_->GetContentRoot()->AddChild(rootContentWidget_);
 
-    SubscribeToEvent(E_FILECHANGED, HANDLER(ResourceEditor, HandleFileChanged));
+    SubscribeToEvent(E_FILECHANGED, ATOMIC_HANDLER(ResourceEditor, HandleFileChanged));
+    SubscribeToEvent(E_RENAMERESOURCENOTIFICATION, ATOMIC_HANDLER(ResourceEditor, HandleRenameResourceNotification));
+
 }
 
 ResourceEditor::~ResourceEditor()
@@ -159,6 +178,18 @@ void ResourceEditor::HandleFileChanged(StringHash eventType, VariantMap& eventDa
             Close();
     }
     */
+}
+
+void ResourceEditor::HandleRenameResourceNotification(StringHash eventType, VariantMap& eventData)
+{
+    using namespace RenameResourceNotification;
+    const String& newPath = eventData[P_NEWRESOURCEPATH].GetString();
+    const String& path = eventData[P_RESOURCEPATH].GetString();
+
+    if (fullpath_.Compare(path) == 0) {
+        fullpath_ = newPath;
+        SetModified(modified_);
+    }
 }
 
 void ResourceEditor::RequestClose()
@@ -201,5 +232,9 @@ void ResourceEditor::SetModified(bool modified)
         button_->SetText(filename.CString());
     }
 }
+
+    
+void ResourceEditor::Delete() {}
+
 
 }

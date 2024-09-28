@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/File.h>
@@ -13,6 +28,7 @@
 #include "../ToolEnvironment.h"
 #include "../Project/Project.h"
 #include "../Project/ProjectBuildSettings.h"
+#include "../Assets/AssetDatabase.h"
 
 #include "../Subprocess/SubprocessSystem.h"
 
@@ -134,19 +150,22 @@ void BuildIOS::Initialize()
 
     Vector<String> defaultResourcePaths;
     GetDefaultResourcePaths(defaultResourcePaths);
-    String projectResources = project->GetResourcePath();
+    
 
     for (unsigned i = 0; i < defaultResourcePaths.Size(); i++)
     {
         AddResourceDir(defaultResourcePaths[i]);
     }
+    BuildDefaultResourceEntries();
 
     // TODO: smart filtering of cache
-    AddResourceDir(project->GetProjectPath() + "Cache/");
-    AddResourceDir(projectResources);
+    String projectResources = project->GetResourcePath();
+    AddProjectResourceDir(projectResources);
+    AssetDatabase* db = GetSubsystem<AssetDatabase>();
+    String cachePath = db->GetCachePath();
+    AddProjectResourceDir(cachePath);
 
-    BuildResourceEntries();
-
+    BuildProjectResourceEntries();
 }
 
 void BuildIOS::RunConvertPList()
@@ -169,8 +188,8 @@ void BuildIOS::RunConvertPList()
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildIOS, HandleConvertPListComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildIOS, HandleConvertPListComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 }
 
@@ -218,8 +237,8 @@ void BuildIOS::RunCodeSign()
     buildOutput[BuildOutput::P_TEXT] = "\n\n<color #D4FB79>Code Signing iOS Deployment</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildIOS, HandleCodeSignComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildIOS, HandleCodeSignComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 }
 
@@ -267,8 +286,8 @@ void BuildIOS::RunDeploy()
     buildOutput[BuildOutput::P_TEXT] = "\n\n<color #D4FB79>Deploying to iOS Device</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildIOS, HandleDeployComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildIOS, HandleDeployComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 
 }
@@ -296,27 +315,31 @@ void BuildIOS::Build(const String& buildPath)
 
     Initialize();
 
-    if (fileSystem->DirExists(buildPath_))
-        fileSystem->RemoveDir(buildPath_, true);
+    if (!BuildClean(buildPath_))
+        return;
 
     String buildSourceDir = tenv->GetToolDataDir();
 
     String buildAppSourceDir = buildSourceDir + "Deployment/IOS/AtomicPlayer.app";
 
-    fileSystem->CreateDir(buildPath_);
+    if (!BuildCreateDirectory(buildPath_))
+        return;
 
     String buildDestDist = buildPath_ + "/AtomicPlayer.app";
 
-    fileSystem->CreateDir(buildDestDist);
+    if (!BuildCreateDirectory(buildDestDist))
+        return;
 
     String resourcePackagePath = buildDestDist + "/AtomicResources" + PAK_EXTENSION;
     GenerateResourcePackage(resourcePackagePath);
 
-    fileSystem->Copy(buildAppSourceDir + "/AtomicPlayer", buildDestDist + "/AtomicPlayer");
-    fileSystem->Copy(buildAppSourceDir + "/PkgInfo", buildDestDist + "/PkgInfo");
-
-    fileSystem->Copy(iosSettings->GetProvisionFile(), buildDestDist + "/embedded.mobileprovision");
-
+    if (!BuildCopyFile(buildAppSourceDir + "/AtomicPlayer", buildDestDist + "/AtomicPlayer"))
+        return;
+    if (!BuildCopyFile(buildAppSourceDir + "/PkgInfo", buildDestDist + "/PkgInfo"))
+        return;
+    if (!BuildCopyFile(iosSettings->GetProvisionFile(), buildDestDist + "/embedded.mobileprovision"))
+        return;
+        
     String entitlements = GenerateEntitlements();
     String plist = GenerateInfoPlist();
 

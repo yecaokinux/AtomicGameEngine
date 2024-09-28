@@ -28,7 +28,7 @@ namespace Atomic
 {
 
 UISelectItem::UISelectItem(Context* context, const String &str, const String &id, const String &skinImage) : Object(context)
-    , subSource_(0)
+    , subSource_(nullptr)
 {
     SetID(id);
     SetString(str);
@@ -82,6 +82,40 @@ UISelectItemSource::UISelectItemSource(Context* context) : Object(context)
 UISelectItemSource::~UISelectItemSource()
 {
 
+}
+
+void UISelectItemSource::RemoveItemWithId(const String& id)
+{
+    tb::TBID test = TBID(id.CString());
+    for (List<SharedPtr<UISelectItem> >::Iterator itr = items_.Begin(); itr != items_.End(); itr++)
+    {
+        if ((*itr)->GetID() == test) {
+            items_.Erase(itr);
+            break;
+        }
+    }
+}
+
+void UISelectItemSource::RemoveItemWithStr(const String& str)
+{
+    for (List<SharedPtr<UISelectItem> >::Iterator itr = items_.Begin(); itr != items_.End(); itr++)
+    {
+        if ((*itr)->GetStr() == str) {
+            items_.Erase(itr);
+            break;
+        }
+    }
+}
+
+const String& UISelectItemSource::GetItemStr(int index)
+{
+    int nn = 0;
+    for (List<SharedPtr<UISelectItem> >::Iterator itr = items_.Begin(); itr != items_.End(); itr++)
+    {
+        if ( nn == index) return (*itr)->GetStr();
+        nn++;
+    }
+    return ( String::EMPTY );
 }
 
 TBSelectItemSource *UISelectItemSource::GetTBItemSource()

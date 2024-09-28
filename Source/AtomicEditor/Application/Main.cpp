@@ -1,9 +1,30 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
 //
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+#if defined(ATOMIC_PLATFORM_WINDOWS) || defined (ATOMIC_PLATFORM_LINUX)
+#ifdef ATOMIC_WEBVIEW
+#include <AtomicWebView/AtomicWebView.h>
+#endif
+#endif
 
 #if defined(WIN32) && !defined(ATOMIC_WIN32_CONSOLE)
 #include <Atomic/Core/MiniDump.h>
@@ -42,6 +63,17 @@ static int RunPlayerApplication()
 #if defined(_MSC_VER) && defined(_DEBUG) && !defined(ATOMIC_WIN32_CONSOLE)
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, int showCmd)
 {
+
+#ifdef ATOMIC_WEBVIEW
+    int exit_code = Atomic::WebMain(0, nullptr);
+
+    if (exit_code >= 0)
+    {
+        // The sub-process has completed so return here.
+        return exit_code;
+    }
+#endif
+
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     Atomic::ParseArguments(GetCommandLineW());
 
@@ -83,6 +115,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, in
 #elif defined(WIN32) && !defined(ATOMIC_WIN32_CONSOLE)
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, int showCmd)
 {
+#ifdef ATOMIC_WEBVIEW
+    int exit_code = Atomic::WebMain(0, nullptr);
+
+    if (exit_code >= 0)
+    {
+        // The sub-process has completed so return here.
+        return exit_code;
+    }
+#endif
+
     Atomic::ParseArguments(GetCommandLineW());
 
     const Vector<String>& arguments = GetArguments();
@@ -106,7 +148,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, in
 #else
 int main(int argc, char** argv)
 {
-    Atomic::ParseArguments(argc, argv);
+  Atomic::ParseArguments(argc, argv);
+
+#if defined(ATOMIC_PLATFORM_WINDOWS) || defined (ATOMIC_PLATFORM_LINUX)
+#ifdef ATOMIC_WEBVIEW
+
+    int exit_code = Atomic::WebMain(argc, argv);
+
+    if (exit_code >= 0)
+    {
+        // The sub-process has completed so return here.
+        return exit_code;
+    }
+
+#endif
+#endif
 
     const Vector<String>& arguments = GetArguments();
 

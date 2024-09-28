@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -46,9 +46,14 @@ StaticSprite2D::StaticSprite2D(Context* context) :
     flipY_(false),
     color_(Color::WHITE),
     useHotSpot_(false),
-    hotSpot_(0.5f, 0.5f)
+    useDrawRect_(false),
+    useTextureRect_(false),
+    hotSpot_(0.5f, 0.5f),
+    drawRect_(Rect::ZERO),
+    textureRect_(Rect::ZERO)
 {
     sourceBatches_.Resize(1);
+    sourceBatches_[0].owner_ = this;
 }
 
 StaticSprite2D::~StaticSprite2D()
@@ -59,16 +64,22 @@ void StaticSprite2D::RegisterObject(Context* context)
 {
     context->RegisterFactory<StaticSprite2D>(ATOMIC2D_CATEGORY);
 
-    ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
-    COPY_BASE_ATTRIBUTES(Drawable2D);
-    MIXED_ACCESSOR_ATTRIBUTE("Sprite", GetSpriteAttr, SetSpriteAttr, ResourceRef, ResourceRef(Sprite2D::GetTypeStatic()),
+    ATOMIC_ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
+    ATOMIC_COPY_BASE_ATTRIBUTES(Drawable2D);
+    ATOMIC_MIXED_ACCESSOR_ATTRIBUTE("Sprite", GetSpriteAttr, SetSpriteAttr, ResourceRef, ResourceRef(Sprite2D::GetTypeStatic()),
         AM_DEFAULT);
-    ENUM_ACCESSOR_ATTRIBUTE("Blend Mode", GetBlendMode, SetBlendMode, BlendMode, blendModeNames, BLEND_ALPHA, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Flip X", GetFlipX, SetFlipX, bool, false, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Flip Y", GetFlipY, SetFlipY, bool, false, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Color", GetColor, SetColor, Color, Color::WHITE, AM_DEFAULT);
-    MIXED_ACCESSOR_ATTRIBUTE("Custom material", GetCustomMaterialAttr, SetCustomMaterialAttr, ResourceRef,
+    ATOMIC_ENUM_ACCESSOR_ATTRIBUTE("Blend Mode", GetBlendMode, SetBlendMode, BlendMode, blendModeNames, BLEND_ALPHA, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Flip X", GetFlipX, SetFlipX, bool, false, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Flip Y", GetFlipY, SetFlipY, bool, false, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Color", GetColor, SetColor, Color, Color::WHITE, AM_DEFAULT);
+    ATOMIC_MIXED_ACCESSOR_ATTRIBUTE("Custom material", GetCustomMaterialAttr, SetCustomMaterialAttr, ResourceRef,
         ResourceRef(Material::GetTypeStatic()), AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Hot Spot", GetHotSpot, SetHotSpot, Vector2, Vector2(0.5f, 0.5f), AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Use Hot Spot", GetUseHotSpot, SetUseHotSpot, bool, false, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Draw Rectangle", GetDrawRect, SetDrawRect, Rect, Rect::ZERO, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Use Draw Rectangle", GetUseDrawRect, SetUseDrawRect, bool, false, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Texture Rectangle", GetTextureRect, SetTextureRect, Rect, Rect::ZERO, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Use Texture Rectangle", GetUseTextureRect, SetUseTextureRect, bool, false, AM_DEFAULT);
 }
 
 void StaticSprite2D::SetSprite(Sprite2D* sprite)
@@ -81,6 +92,28 @@ void StaticSprite2D::SetSprite(Sprite2D* sprite)
 
     sourceBatchesDirty_ = true;
     MarkNetworkUpdate();
+
+    UpdateDrawRect();
+}
+
+void StaticSprite2D::SetDrawRect(const Rect& rect)
+{
+    drawRect_ = rect;
+
+    if(useDrawRect_)
+    {
+        sourceBatchesDirty_ = true;
+    }
+}
+
+void StaticSprite2D::SetTextureRect(const Rect& rect)
+{
+    textureRect_ = rect;
+
+    if(useTextureRect_)
+    {
+        sourceBatchesDirty_ = true;
+    }
 }
 
 void StaticSprite2D::SetBlendMode(BlendMode blendMode)
@@ -102,8 +135,6 @@ void StaticSprite2D::SetFlip(bool flipX, bool flipY)
     flipX_ = flipX;
     flipY_ = flipY;
     sourceBatchesDirty_ = true;
-
-    OnFlipChanged();
 
     MarkNetworkUpdate();
 }
@@ -146,6 +177,28 @@ void StaticSprite2D::SetUseHotSpot(bool useHotSpot)
     useHotSpot_ = useHotSpot;
     sourceBatchesDirty_ = true;
     MarkNetworkUpdate();
+    UpdateDrawRect();
+}
+
+void StaticSprite2D::SetUseDrawRect(bool useDrawRect)
+{
+    if (useDrawRect == useDrawRect_)
+        return;
+
+    useDrawRect_ = useDrawRect;
+    sourceBatchesDirty_ = true;
+    MarkNetworkUpdate();
+    UpdateDrawRect();
+}
+
+void StaticSprite2D::SetUseTextureRect(bool useTextureRect)
+{
+    if (useTextureRect == useTextureRect_)
+        return;
+
+    useTextureRect_ = useTextureRect;
+    sourceBatchesDirty_ = true;
+    MarkNetworkUpdate();
 }
 
 void StaticSprite2D::SetHotSpot(const Vector2& hotspot)
@@ -160,6 +213,8 @@ void StaticSprite2D::SetHotSpot(const Vector2& hotspot)
         sourceBatchesDirty_ = true;
         MarkNetworkUpdate();
     }
+
+    UpdateDrawRect();
 }
 
 void StaticSprite2D::SetCustomMaterial(Material* customMaterial)
@@ -208,30 +263,23 @@ ResourceRef StaticSprite2D::GetCustomMaterialAttr() const
     return GetResourceRef(customMaterial_, Material::GetTypeStatic());
 }
 
+void StaticSprite2D::OnSceneSet(Scene* scene)
+{
+    Drawable2D::OnSceneSet(scene);
+
+    UpdateMaterial();
+}
+
 void StaticSprite2D::OnWorldBoundingBoxUpdate()
 {
     boundingBox_.Clear();
+    worldBoundingBox_.Clear();
 
-    if (sprite_)
-    {
-        const IntRect& rectangle_ = sprite_->GetRectangle();
-        float width = (float)rectangle_.Width() * PIXEL_SIZE;     // Compute width and height in pixels
-        float height = (float)rectangle_.Height() * PIXEL_SIZE;
+    const Vector<SourceBatch2D>& sourceBatches = GetSourceBatches();
+    for (unsigned i = 0; i < sourceBatches[0].vertices_.Size(); ++i)
+        worldBoundingBox_.Merge(sourceBatches[0].vertices_[i].position_);
 
-        const Vector2& hotSpot = sprite_->GetHotSpot();
-        float hotSpotX = flipX_ ? (1.0f - hotSpot.x_) : hotSpot.x_;
-        float hotSpotY = flipY_ ? (1.0f - hotSpot.y_) : hotSpot.y_;
-
-        float leftX = -width * hotSpotX;
-        float rightX = width * (1.0f - hotSpotX);
-        float bottomY = -height * hotSpotY;
-        float topY = height * (1.0f - hotSpotY);
-
-        boundingBox_.Merge(Vector3(leftX, bottomY, 0.0f));
-        boundingBox_.Merge(Vector3(rightX, topY, 0.0f));
-    }
-
-    worldBoundingBox_ = boundingBox_.Transformed(node_->GetWorldTransform());
+    boundingBox_ = worldBoundingBox_.Transformed(node_->GetWorldTransform().Inverse());
 }
 
 void StaticSprite2D::OnDrawOrderChanged()
@@ -250,21 +298,11 @@ void StaticSprite2D::UpdateSourceBatches()
     if (!sprite_)
         return;
 
-    Rect drawRect;
-    if (useHotSpot_)
+    if (!useTextureRect_)
     {
-        if (!sprite_->GetDrawRectangle(drawRect, hotSpot_, flipX_, flipY_))
+        if (!sprite_->GetTextureRectangle(textureRect_, flipX_, flipY_))
             return;
     }
-    else
-    {
-        if (!sprite_->GetDrawRectangle(drawRect, flipX_, flipY_))
-            return;
-    }
-
-    Rect textureRect;
-    if (!sprite_->GetTextureRectangle(textureRect, flipX_, flipY_))
-        return;
 
     /*
     V1---------V2
@@ -282,15 +320,15 @@ void StaticSprite2D::UpdateSourceBatches()
 
     // Convert to world space
     const Matrix3x4& worldTransform = node_->GetWorldTransform();
-    vertex0.position_ = worldTransform * Vector3(drawRect.min_.x_, drawRect.min_.y_, 0.0f);
-    vertex1.position_ = worldTransform * Vector3(drawRect.min_.x_, drawRect.max_.y_, 0.0f);
-    vertex2.position_ = worldTransform * Vector3(drawRect.max_.x_, drawRect.max_.y_, 0.0f);
-    vertex3.position_ = worldTransform * Vector3(drawRect.max_.x_, drawRect.min_.y_, 0.0f);
+    vertex0.position_ = worldTransform * Vector3(drawRect_.min_.x_, drawRect_.min_.y_, 0.0f);
+    vertex1.position_ = worldTransform * Vector3(drawRect_.min_.x_, drawRect_.max_.y_, 0.0f);
+    vertex2.position_ = worldTransform * Vector3(drawRect_.max_.x_, drawRect_.max_.y_, 0.0f);
+    vertex3.position_ = worldTransform * Vector3(drawRect_.max_.x_, drawRect_.min_.y_, 0.0f);
 
-    vertex0.uv_ = textureRect.min_;
-    vertex1.uv_ = Vector2(textureRect.min_.x_, textureRect.max_.y_);
-    vertex2.uv_ = textureRect.max_;
-    vertex3.uv_ = Vector2(textureRect.max_.x_, textureRect.min_.y_);
+    vertex0.uv_ = textureRect_.min_;
+    vertex1.uv_ = Vector2(textureRect_.min_.x_, textureRect_.max_.y_);
+    vertex2.uv_ = textureRect_.max_;
+    vertex3.uv_ = Vector2(textureRect_.max_.x_, textureRect_.min_.y_);
 
     vertex0.color_ = vertex1.color_ = vertex2.color_ = vertex3.color_ = color_.ToUInt();
 
@@ -302,21 +340,33 @@ void StaticSprite2D::UpdateSourceBatches()
     sourceBatchesDirty_ = false;
 }
 
-void StaticSprite2D::OnFlipChanged()
-{
-
-}
-
 void StaticSprite2D::UpdateMaterial()
 {
     if (customMaterial_)
         sourceBatches_[0].material_ = customMaterial_;
     else
     {
-        if (sprite_)
+        if (sprite_ && renderer_)
             sourceBatches_[0].material_ = renderer_->GetMaterial(sprite_->GetTexture(), blendMode_);
         else
             sourceBatches_[0].material_ = 0;
+    }
+}
+
+void StaticSprite2D::UpdateDrawRect()
+{
+    if (!useDrawRect_)
+    {
+        if (useHotSpot_)
+        {
+            if (sprite_ && !sprite_->GetDrawRectangle(drawRect_, hotSpot_, flipX_, flipY_))
+                return;
+        }
+        else
+        {
+            if (sprite_ && !sprite_->GetDrawRectangle(drawRect_, flipX_, flipY_))
+                return;
+        }
     }
 }
 

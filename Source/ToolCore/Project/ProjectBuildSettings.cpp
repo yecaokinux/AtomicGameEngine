@@ -1,13 +1,27 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/Log.h>
 #include <Atomic/IO/File.h>
-
 #include <Atomic/Resource/JSONFile.h>
 
 #include "ProjectBuildSettings.h"
@@ -74,9 +88,10 @@ void WebBuildSettings::Write(JSONValue& parent)
     JSONValue json;
 
     json.Set("appName", appName_);
-    json.Set("packageName", packageName_);
-    json.Set("companyName", companyName_);
-    json.Set("productName", productName_);
+    json.Set("gameWidth", gameWidth_);
+    json.Set("gameHeight", gameHeight_);
+    json.Set("faviconName", faviconName_);
+    json.Set("pageTheme", pageTheme_ );
 
     parent.Set("WebBuildSettings", json);
 
@@ -90,10 +105,10 @@ void WebBuildSettings::Read(JSONValue& parent)
         return;
 
     appName_ = json.Get("appName").GetString();
-    packageName_ = json.Get("packageName").GetString();
-    companyName_ = json.Get("companyName").GetString();
-    productName_ = json.Get("productName").GetString();
-
+    gameWidth_ = json.Get("gameWidth").GetString();
+    gameHeight_ = json.Get("gameHeight").GetString();
+    faviconName_ = json.Get("faviconName").GetString();
+    pageTheme_ = json.Get("pageTheme").GetInt();
 }
 
 void AndroidBuildSettings::Write(JSONValue& parent)
@@ -108,6 +123,7 @@ void AndroidBuildSettings::Write(JSONValue& parent)
     json.Set("targetSDKVersion", targetSDKVersion_);
     json.Set("minSDKVersion", minSDKVersion_);
     json.Set("activityName", activityName_);
+    json.Set("iconPath", iconPath_);
 
     parent.Set("AndroidBuildSettings", json);
 
@@ -129,6 +145,7 @@ void AndroidBuildSettings::Read(JSONValue& parent)
     targetSDKVersion_ = json.Get("targetSDKVersion").GetString();
     minSDKVersion_ = json.Get("minSDKVersion").GetString();
     activityName_ = json.Get("activityName").GetString();
+    iconPath_ = json.Get("iconPath").GetString();
 
 }
 
@@ -161,17 +178,47 @@ void IOSBuildSettings::Read(JSONValue& parent)
     companyName_ = json.Get("companyName").GetString();
     productName_ = json.Get("productName").GetString();
 
-    provisionFile_ = json.Get("provisionFile").GetString();;
-    appidPrefix_ = json.Get("appIDPrefix").GetString();;
+    provisionFile_ = json.Get("provisionFile").GetString();
+    appidPrefix_ = json.Get("appIDPrefix").GetString();
 
 }
+
+
+void LinuxBuildSettings::Write(JSONValue& parent)
+{
+    JSONValue json;
+
+    json.Set("appName", appName_);
+    json.Set("packageName", packageName_);
+    json.Set("companyName", companyName_);
+    json.Set("productName", productName_);
+
+    parent.Set("LinuxBuildSettings", json);
+
+}
+
+void LinuxBuildSettings::Read(JSONValue& parent)
+{
+    JSONValue json = parent.Get("LinuxBuildSettings");
+
+    if (!json.IsObject())
+        return;
+
+    appName_ = json.Get("appName").GetString();
+    packageName_ = json.Get("packageName").GetString();
+    companyName_ = json.Get("companyName").GetString();
+    productName_ = json.Get("productName").GetString();
+
+}
+
 
 ProjectBuildSettings::ProjectBuildSettings(Context* context) : Object(context),
     macBuildSettings_(new MacBuildSettings()),
     windowsBuildSettings_(new WindowsBuildSettings()),
     webBuildSettings_(new WebBuildSettings()),
     androidBuildSettings_(new AndroidBuildSettings()),
-    iosBuildSettings_(new IOSBuildSettings())
+    iosBuildSettings_(new IOSBuildSettings()),
+    linuxBuildSettings_(new LinuxBuildSettings())
 {
 
 }
@@ -194,7 +241,7 @@ bool ProjectBuildSettings::Load(const String& path)
     if (!result)
         return false;
 
-    JSONValue root = jsonFile->GetRoot();
+    JSONValue& root = jsonFile->GetRoot();
     if (!root.IsObject())
         return false;
 
@@ -203,6 +250,7 @@ bool ProjectBuildSettings::Load(const String& path)
     webBuildSettings_->Read(root);
     androidBuildSettings_->Read(root);
     iosBuildSettings_->Read(root);
+    linuxBuildSettings_->Read(root);
 
     return true;
 }
@@ -220,6 +268,7 @@ void ProjectBuildSettings::Save(const String& path)
     webBuildSettings_->Write(root);
     androidBuildSettings_->Write(root);
     iosBuildSettings_->Write(root);
+    linuxBuildSettings_->Write(root);
 
     jsonFile->Save(*file, String("   "));
 

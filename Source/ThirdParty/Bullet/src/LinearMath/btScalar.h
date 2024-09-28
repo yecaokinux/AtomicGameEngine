@@ -12,10 +12,12 @@ subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 
+// Modified by Lasse Oorni and Yao Wei Tjong for Urho3D
 
 
 #ifndef BT_SCALAR_H
 #define BT_SCALAR_H
+
 
 #ifdef BT_MANAGED_CODE
 //Aligned data types not supported in managed code
@@ -28,7 +30,7 @@ subject to the following restrictions:
 #include <float.h>
 
 /* SVN $Revision$ on $Date$ from http://bullet.googlecode.com*/
-#define BT_BULLET_VERSION 283
+#define BT_BULLET_VERSION 286
 
 inline int	btGetVersion()
 {
@@ -40,7 +42,8 @@ inline int	btGetVersion()
 #endif
 
 
-#ifdef _WIN32
+// Urho3D - enable BT_USE_SSE for MinGW
+#if defined(_WIN32) && !defined(__MINGW32__)
 
 		#if defined(__MINGW32__) || defined(__CYGWIN__) || (defined (_MSC_VER) && _MSC_VER < 1300)
 
@@ -57,7 +60,7 @@ inline int	btGetVersion()
 			//#define BT_HAS_ALIGNED_ALLOCATOR
 			#pragma warning(disable : 4324) // disable padding warning
 //			#pragma warning(disable:4530) // Disable the exception disable but used in MSCV Stl warning.
-//			#pragma warning(disable:4996) //Turn off warnings about deprecated C routines
+			#pragma warning(disable:4996) //Turn off warnings about deprecated C routines
 //			#pragma warning(disable:4786) // Disable the "debug name too long" warning
 
 			#define SIMD_FORCE_INLINE __forceinline
@@ -74,7 +77,9 @@ inline int	btGetVersion()
 
 #if defined (_M_ARM)
             //Do not turn SSE on for ARM (may want to turn on BT_USE_NEON however)
-#elif (defined (_WIN32) && (_MSC_VER) && _MSC_VER >= 1400) && (!defined (BT_USE_DOUBLE_PRECISION))
+
+// Urho3D: allow to disable SSE
+#elif ((!defined(_M_IX86_FP) || _M_IX86_FP) && defined (_WIN32) && (_MSC_VER) && _MSC_VER >= 1400) && (!defined (BT_USE_DOUBLE_PRECISION))
 			#if _MSC_VER>1400
 				#define BT_USE_SIMD_VECTOR3
 			#endif
@@ -104,7 +109,7 @@ inline int	btGetVersion()
 #ifdef BT_DEBUG
 	#ifdef _MSC_VER
 		#include <stdio.h>
-		#define btAssert(x) { if(!(x)){printf("Assert "__FILE__ ":%u ("#x")\n", __LINE__);__debugbreak();	}}
+		#define btAssert(x) { if(!(x)){printf("Assert "__FILE__ ":%u (%s)\n", __LINE__, #x);__debugbreak();	}}
 	#else//_MSC_VER
 		#include <assert.h>
 		#define btAssert assert
@@ -171,10 +176,11 @@ inline int	btGetVersion()
 		
 
 #else
-	//non-windows systems
+	//non-windows systems OR MinGW
 
-#if (defined (__APPLE__) && (!defined (BT_USE_DOUBLE_PRECISION)))
-    #if defined (__i386__) || defined (__x86_64__)
+// Urho3D - allow to disable SSE/NEON and let Linux, MinGW, & Android platforms in besides Apple
+#if (!defined (BT_USE_DOUBLE_PRECISION))
+    #if defined(__SSE__)
 		#define BT_USE_SIMD_VECTOR3
 		#define BT_USE_SSE
 		//BT_USE_SSE_IN_API is enabled on Mac OSX by default, because memory is automatically aligned on 16-byte boundaries
@@ -286,7 +292,7 @@ typedef __m128 btSimdFloat4;
 
 #if defined (BT_USE_SSE)
 //#if defined BT_USE_SSE_IN_API && defined (BT_USE_SSE)
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)	// Urho3D - enable BT_USE_SSE for MinGW
 
 #ifndef BT_NAN
 static int btNanMask = 0x7F800001;
@@ -486,9 +492,17 @@ SIMD_FORCE_INLINE btScalar btFmod(btScalar x,btScalar y) { return fmodf(x,y); }
 #ifdef BT_USE_DOUBLE_PRECISION
 #define SIMD_EPSILON      DBL_EPSILON
 #define SIMD_INFINITY     DBL_MAX
+#define BT_ONE			1.0
+#define BT_ZERO			0.0
+#define BT_TWO			2.0
+#define BT_HALF			0.5
 #else
 #define SIMD_EPSILON      FLT_EPSILON
 #define SIMD_INFINITY     FLT_MAX
+#define BT_ONE			1.0f
+#define BT_ZERO			0.0f
+#define BT_TWO			2.0f
+#define BT_HALF			0.5f
 #endif
 
 SIMD_FORCE_INLINE btScalar btAtan2Fast(btScalar y, btScalar x) 

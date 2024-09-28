@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
@@ -20,7 +35,7 @@ class Project;
 
 class AssetDatabase : public Object
 {
-    OBJECT(AssetDatabase);
+    ATOMIC_OBJECT(AssetDatabase, Object);
 
 public:
     /// Construct.
@@ -36,9 +51,24 @@ public:
 
     String GetCachePath();
 
+    /// Get whether the asset cache is enabled
+    bool GetCacheEnabled() const { return cacheEnabled_; }
+
+    /// Set whether the asset cache is enabled 
+    void SetCacheEnabled(bool cacheEnabled);
+
+    /// Cleans the asset Cache folder by removing and recreating it
+    bool CleanCache();
+
+    /// Regenerates the asset cache, clean removes the Cache folder before generating
+    bool GenerateCache(bool clean = true);
+
     void DeleteAsset(Asset* asset);
 
     void Scan();
+
+    void ReimportAllAssets();
+    void ReimportAllAssetsInDirectory(const String& directoryPath);
 
     void GetFolderAssets(String folder, PODVector<Asset*>& assets) const;
 
@@ -57,14 +87,21 @@ private:
     void HandleFileChanged(StringHash eventType, VariantMap& eventData);
     void HandleResourceLoadFailed(StringHash eventType, VariantMap& eventData);
 
-    void AddAsset(SharedPtr<Asset>& asset);
+    void AddAsset(SharedPtr<Asset>& asset, bool newAsset = false);
 
     void PruneOrphanedDotAssetFiles();
 
+    void ReadImportConfig();
     void Import(const String& path);
 
     bool ImportDirtyAssets();
     void PreloadAssets();
+
+    // internal method that initializes project asset cache
+    bool InitCache();
+
+    // Update mapping of asset paths to cache file representations, by type
+    void UpdateAssetCacheMap();
 
     SharedPtr<Project> project_;
     List<SharedPtr<Asset>> assets_;
@@ -75,6 +112,12 @@ private:
     HashMap<StringHash, unsigned> assetImportErrorTimes_;
 
     Vector<String> usedGUID_;
+
+    unsigned assetScanDepth_;
+    // Whether any asset was imported during scan
+    bool assetScanImport_;
+
+    bool cacheEnabled_;
 
 };
 

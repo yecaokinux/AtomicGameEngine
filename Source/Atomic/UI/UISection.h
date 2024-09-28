@@ -28,14 +28,26 @@ namespace Atomic
 {
 
 
-class UISection : public UIWidget
+class ATOMIC_API UISection : public UIWidget
 {
-    OBJECT(UISection)
+    ATOMIC_OBJECT(UISection, UIWidget)
 
 public:
 
     UISection(Context* context, bool createWidget = true);
     virtual ~UISection();
+
+    void AddChild(UIWidget* child);
+    void AddChildAfter(UIWidget* child, UIWidget* otherChild);
+    void AddChildBefore(UIWidget* child, UIWidget* otherChild);
+    void AddChildRelative(UIWidget* child, UI_WIDGET_Z_REL z, UIWidget* reference);
+
+    void RemoveChild(UIWidget* child, bool cleanup = true);
+    void DeleteAllChildren();
+
+    UIWidget* GetFirstChild();
+    UIWidget* GetWidget(const String& id);
+
 
 protected:
 

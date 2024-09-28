@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,18 +24,18 @@
 
 #include "../../Core/Variant.h"
 
-#include <nanodbc/nanodbc.h>
+#include <nanodbc.h>
 
-namespace Urho3D
+namespace Atomic
 {
 
 /// %Database query result.
-class URHO3D_API DbResult
+class ATOMIC_API DbResult
 {
     friend class DbConnection;
 
 public:
-    // Default constructor constructs an empty result object.
+    /// Default constructor constructs an empty result object.
     DbResult() :
         numAffectedRows_(-1)
     {

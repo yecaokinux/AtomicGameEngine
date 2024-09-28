@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,11 @@
 
 #include <kNet/IMessageHandler.h>
 #include <kNet/INetworkServerListener.h>
+#include <kNet/Socket.h>
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
 
 namespace Atomic
 {
@@ -46,7 +51,7 @@ template <class T> unsigned MakeHash(kNet::MessageConnection* value)
 /// %Network subsystem. Manages client-server communications using the UDP protocol.
 class ATOMIC_API Network : public Object, public kNet::IMessageHandler, public kNet::INetworkServerListener
 {
-    OBJECT(Network);
+    ATOMIC_OBJECT(Network, Object);
 
 public:
     /// Construct.
@@ -64,12 +69,12 @@ public:
     /// Handle a client disconnection.
     virtual void ClientDisconnected(kNet::MessageConnection* connection);
 
-    /// Connect to a server using UDP protocol. Return true if connection process successfully started.
-    bool Connect(const String& address, unsigned short port, Scene* scene, const VariantMap& identity = Variant::emptyVariantMap);
+    /// Connect to a server using specified protocol. Return true if connection process successfully started.
+    bool Connect(const String& address, unsigned short port, kNet::SocketTransportLayer transport, Scene* scene, const VariantMap& identity = Variant::emptyVariantMap);
     /// Disconnect the connection to the server. If wait time is non-zero, will block while waiting for disconnect to finish.
     void Disconnect(int waitMSec = 0);
-    /// Start a server on a port using UDP protocol. Return true if successful.
-    bool StartServer(unsigned short port);
+    /// Start a server on a port using specified protocol. Return true if successful.
+    bool StartServer(unsigned short port, kNet::SocketTransportLayer transport);
     /// Stop the server.
     void StopServer();
     /// Broadcast a message with content ID to all client connections.
@@ -134,6 +139,19 @@ public:
     /// Send outgoing messages after frame logic. Called by HandleRenderUpdate.
     void PostUpdate(float timeStep);
 
+    // ATOMIC BEGIN
+
+    friend class MasterServerClient;
+
+    unsigned short GetServerPort() const { return serverPort_; }
+
+    bool IsEndPointConnected(const kNet::EndPoint& endPoint) const;
+
+    /// Connect to a server, reusing an existing Socket
+    bool ConnectWithExistingSocket(kNet::Socket* existingSocket, Scene* scene);
+
+    // ATOMIC END
+
 private:
     /// Handle begin frame event.
     void HandleBeginFrame(StringHash eventType, VariantMap& eventData);
@@ -147,7 +165,7 @@ private:
     void ConfigureNetworkSimulator();
 
     /// kNet instance.
-    kNet::Network* network_;
+    UniquePtr<kNet::Network> network_;
     /// Client's server connection.
     SharedPtr<Connection> serverConnection_;
     /// Server's client connections.
@@ -170,6 +188,16 @@ private:
     float updateAcc_;
     /// Package cache directory.
     String packageCacheDir_;
+
+    // ATOMIC BEGIN
+    
+    void HandleClientConnected(StringHash eventType, VariantMap& eventData);
+
+    kNet::Network* GetKnetNetwork() { return network_.Get(); }
+
+    unsigned short serverPort_;
+    // ATOMIC END
+
 };
 
 /// Register Network library objects.

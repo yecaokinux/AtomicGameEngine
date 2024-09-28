@@ -35,7 +35,9 @@ using namespace tb;
 namespace Atomic
 {
 
-UIButton::UIButton(Context* context, bool createWidget) : UIWidget(context, false), emulationButton_(-1)
+UIButton::UIButton(Context* context, bool createWidget) : UIWidget(context, false),
+    emulationButton_(-1),
+    urlEnabled_(true)
 {
     if (createWidget)
     {
@@ -58,6 +60,23 @@ void UIButton::SetSqueezable(bool value)
     ((TBButton*)widget_)->SetSqueezable(value);
 }
 
+void UIButton::SetToggleMode(bool toggle)
+{
+    if (!widget_)
+        return;
+
+    ((TBButton*)widget_)->SetToggleMode(toggle);
+
+}
+
+bool UIButton::GetToggleMode() const
+{
+    if (!widget_)
+        return false;
+
+    return ((TBButton*)widget_)->GetToggleMode();
+}
+
 void UIButton::SetEmulationButton(int emulationButton)
 {
     emulationButton_ = emulationButton;
@@ -66,12 +85,27 @@ void UIButton::SetEmulationButton(int emulationButton)
 bool UIButton::OnEvent(const tb::TBWidgetEvent &ev)
 {
     if (ev.type == EVENT_TYPE_CLICK)
-	{
-        String text = GetText();
-        if (text.StartsWith("http://") || text.StartsWith("https://"))
-		{
-            FileSystem* fileSystem = GetSubsystem<FileSystem>();
-            fileSystem->SystemOpen(text);
+    {
+        if (urlEnabled_)
+        {
+            // First see if we have a url specified, if not and the button uses the TBButton.link skin try text
+            String url = GetURL();
+            String skinname = widget_->GetSkinBgElement() ? widget_->GetSkinBgElement()->name.CStr() : String::EMPTY;
+            if (!url.Length() && skinname == "TBButton.link")
+            {
+                String text = GetText();
+
+                if (text.StartsWith("http://") || text.StartsWith("https://") || text.StartsWith("file://"))
+                {
+                    url = text;
+                }
+            }
+
+            if (url.Length())
+            {
+                FileSystem* fileSystem = GetSubsystem<FileSystem>();
+                fileSystem->SystemOpen(url);
+            }
         }
     }
     if (ev.type == EVENT_TYPE_POINTER_DOWN && emulationButton_ >= 0)
@@ -84,5 +118,26 @@ bool UIButton::OnEvent(const tb::TBWidgetEvent &ev)
     }
     return UIWidget::OnEvent(ev);
 }
+
+/// Set the URL which is opened when this button is clicked, this overrides the text attr
+void UIButton::SetURL (const String& url)
+{
+    if (!widget_)
+        return;
+
+    ((TBButton*)widget_)->SetURL(url.CString());
+
+}
+
+/// Get the URL which is opened when this button is clicked
+String UIButton::GetURL()
+{
+    if (!widget_)
+        return String::EMPTY;
+
+    return ((TBButton*)widget_)->GetURL().CStr();
+
+}
+
 
 }

@@ -25,6 +25,7 @@
 #include <ThirdParty/TurboBadger/tb_widgets_listener.h>
 
 #include "../Core/Object.h"
+#include "../UI/UIEnums.h"
 #include "../UI/UIBatch.h"
 
 namespace Atomic
@@ -33,16 +34,15 @@ namespace Atomic
 class VertexBuffer;
 class UIRenderer;
 class UIWidget;
+class UIView;
 class UIPopupWindow;
+class MessageBox;
 
-namespace SystemUI
+class ATOMIC_API UI : public Object, private tb::TBWidgetListener
 {
-    class MessageBox;
-}
+    friend class UIView;
 
-class UI : public Object, private tb::TBWidgetListener
-{
-    OBJECT(UI)
+    ATOMIC_OBJECT(UI, Object)
 
 public:
 
@@ -58,8 +58,6 @@ public:
     void SetInputDisabled(bool disabled) { inputDisabled_ = disabled; }
 
     void Render(bool resetRenderTargets = true);
-    void GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexData, const IntRect& currentScissor);
-    void SubmitBatchVertexData(Texture* texture, const PODVector<float>& vertexData);
 
     void Initialize(const String& languageFile);
 
@@ -92,12 +90,28 @@ public:
 
     void GetTBIDString(unsigned id, String& value);
 
-    SystemUI::MessageBox *ShowSystemMessageBox(const String& title, const String& message);
+    MessageBox *ShowSystemMessageBox(const String& title, const String& message);
+
+    // Debug HUD
+
     void ShowDebugHud(bool value);
     void ToggleDebugHud();
 
+    /// Cycle debug HUD between showing primitive stats, current mode, profiler data, all three or none
+    void CycleDebugHudMode();
+
+    void SetDebugHudProfileMode(DebugHudProfileMode mode);
+
+    void SetDebugHudExtents(bool useRootExtents = true, const IntVector2& position = IntVector2::ZERO, const IntVector2& size = IntVector2::ZERO);
+
+    /// Set the DebugHud refresh interval for performance and metrics in seconds
+    void SetDebugHudRefreshInterval(float seconds);
+
     void ShowConsole(bool value);
     void ToggleConsole();
+
+    /// Get whether the console is currently visible
+    bool GetConsoleIsVisible() const { return consoleVisible_; }
 
     bool GetFocusedWidget();
 
@@ -114,33 +128,38 @@ public:
 
     UIWidget* GetHoveredWidget();
 
+    // Debugging
+    static void DebugShowSettingsWindow(UIWidget* parent);
+
+    /// Get the currently focused view
+    UIView* GetFocusedView() const { return focusedView_; }
+
 private:
 
     static WeakPtr<Context> uiContext_;
     static void TBFileReader(const char* filename, void** data, unsigned* length);
     static void TBIDRegisterStringCallback(unsigned id, const char* value);
 
+    void HandlePostUpdate(StringHash eventType, VariantMap& eventData);
     void HandleRenderUpdate(StringHash eventType, VariantMap& eventData);
     void HandleExitRequested(StringHash eventType, VariantMap& eventData);
-
-    void Render(VertexBuffer* buffer, const PODVector<UIBatch>& batches, unsigned batchStart, unsigned batchEnd);
-    void SetVertexData(VertexBuffer* dest, const PODVector<float>& vertexData);
 
     // TBWidgetListener
     void OnWidgetDelete(tb::TBWidget *widget);
     bool OnWidgetDying(tb::TBWidget *widget);    
     void OnWidgetFocusChanged(tb::TBWidget *widget, bool focused);
     bool OnWidgetInvokeEvent(tb::TBWidget *widget, const tb::TBWidgetEvent &ev);
+    void OnWindowClose(tb::TBWindow *window);
 
+    /// Add a UIView to UI subsystem, happens immediately at UIView creation
+    void AddUIView(UIView* uiView);
+    /// Set the currently focused view
+    void SetFocusedView(UIView* uiView);
+    /// Removes a UIView from the UI subsystem, readding a view is not encouraged
+    void RemoveUIView(UIView* uiView);
 
     tb::TBWidget* rootWidget_;
     UIRenderer* renderer_;
-
-    /// UI rendering batches.
-    PODVector<UIBatch> batches_;
-    /// UI rendering vertex data.
-    PODVector<float> vertexData_;
-    SharedPtr<VertexBuffer> vertexBuffer_;
 
     WeakPtr<Graphics> graphics_;
 
@@ -160,22 +179,14 @@ private:
     
     float tooltipHoverTime_;
 
+    Vector<SharedPtr<UIView>> uiViews_;
+
+    WeakPtr<UIView> focusedView_;
+
     // Events
     void HandleScreenMode(StringHash eventType, VariantMap& eventData);
-    void HandleMouseButtonDown(StringHash eventType, VariantMap& eventData);
-    void HandleMouseButtonUp(StringHash eventType, VariantMap& eventData);
-    void HandleMouseMove(StringHash eventType, VariantMap& eventData);
-    void HandleMouseWheel(StringHash eventType, VariantMap& eventData);
-    void HandleKeyDown(StringHash eventType, VariantMap& eventData);
-    void HandleKeyUp(StringHash eventType, VariantMap& eventData);
-    void HandleKey(bool keydown, int keycode, int scancode);
-    void HandleTextInput(StringHash eventType, VariantMap& eventData);
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
     void HandleConsoleClosed(StringHash eventType, VariantMap& eventData);
-    //Touch Input
-    void HandleTouchBegin(StringHash eventType, VariantMap& eventData);
-    void HandleTouchMove(StringHash eventType, VariantMap& eventData);
-    void HandleTouchEnd(StringHash eventType, VariantMap& eventData);
 };
 
 }

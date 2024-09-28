@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,8 @@
 namespace Atomic
 {
 
+extern const char* ATOMIC2D_CATEGORY;
+
 ConstraintMotor2D::ConstraintMotor2D(Context* context) :
     Constraint2D(context),
     linearOffset_(Vector2::ZERO)
@@ -45,15 +47,15 @@ ConstraintMotor2D::~ConstraintMotor2D()
 
 void ConstraintMotor2D::RegisterObject(Context* context)
 {
-    context->RegisterFactory<ConstraintMotor2D>();
+    context->RegisterFactory<ConstraintMotor2D>(ATOMIC2D_CATEGORY);
 
-    ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Linear Offset", GetLinearOffset, SetLinearOffset, Vector2, Vector2::ZERO, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Angular Offset", GetAngularOffset, SetAngularOffset, float, 0.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 1.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Max Torque", GetMaxTorque, SetMaxTorque, float, 1.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Correction Factor", GetCorrectionFactor, SetCorrectionFactor, float, 0.3f, AM_DEFAULT);
-    COPY_BASE_ATTRIBUTES(Constraint2D);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Linear Offset", GetLinearOffset, SetLinearOffset, Vector2, Vector2::ZERO, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Angular Offset", GetAngularOffset, SetAngularOffset, float, 0.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 1.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Max Torque", GetMaxTorque, SetMaxTorque, float, 1.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Correction Factor", GetCorrectionFactor, SetCorrectionFactor, float, 0.3f, AM_DEFAULT);
+    ATOMIC_COPY_BASE_ATTRIBUTES(Constraint2D);
 }
 
 void ConstraintMotor2D::SetLinearOffset(const Vector2& linearOffset)
@@ -63,7 +65,11 @@ void ConstraintMotor2D::SetLinearOffset(const Vector2& linearOffset)
 
     linearOffset_ = linearOffset;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MotorJoint*>(joint_)->SetLinearOffset(ToB2Vec2(linearOffset));
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -74,7 +80,11 @@ void ConstraintMotor2D::SetAngularOffset(float angularOffset)
 
     jointDef_.angularOffset = angularOffset;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MotorJoint*>(joint_)->SetAngularOffset(angularOffset);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -85,7 +95,11 @@ void ConstraintMotor2D::SetMaxForce(float maxForce)
 
     jointDef_.maxForce = maxForce;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MotorJoint*>(joint_)->SetMaxForce(maxForce);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -96,7 +110,11 @@ void ConstraintMotor2D::SetMaxTorque(float maxTorque)
 
     jointDef_.maxTorque = maxTorque;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MotorJoint*>(joint_)->SetMaxTorque(maxTorque);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -107,7 +125,11 @@ void ConstraintMotor2D::SetCorrectionFactor(float correctionFactor)
 
     jointDef_.correctionFactor = correctionFactor;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MotorJoint*>(joint_)->SetCorrectionFactor(correctionFactor);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 

@@ -118,28 +118,6 @@ int UIWindow_GetResizeToFitContentRect(duk_context* ctx)
 
 }
 
-int UI_DebugGetUIKeepAliveCount(duk_context* ctx)
-{
-    duk_push_global_stash(ctx);
-    duk_get_prop_string(ctx, -1, "__jsui_widgetkeepalive");
-
-    duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY);
-
-    double count = 0;
-
-    while (duk_next(ctx, -1 , 0)) {
-
-        duk_pop(ctx);  /* pop_key */
-        count++;
-    }
-
-    duk_pop_n(ctx, 3);  /* pop enum object, keep alive object, and stash */
-
-    duk_push_number(ctx, count);
-
-    return 1;
-}
-
 int UI_DebugGetWrappedWidgetCount(duk_context* ctx)
 {
     JSVM* vm = JSVM::GetJSVM(ctx);
@@ -149,21 +127,69 @@ int UI_DebugGetWrappedWidgetCount(duk_context* ctx)
     return 1;
 }
 
-int UI_DebugShowSettingsWindow(duk_context* ctx)
+static int UIWidget_SearchWidgetClass(duk_context* ctx)
 {
-    UIWidget* widget = js_to_class_instance<UIWidget>(ctx, 0, 0);
+    const char* clssName = duk_require_string(ctx, 0);
+    duk_push_this(ctx);
 
-    if (!widget)
-        return 0;
+    UIWidget* uiwidget = js_to_class_instance<UIWidget>(ctx, -1, 0);
 
-#ifdef TB_RUNTIME_DEBUG_INFO
-    if (widget->GetInternalWidget())
-        tb::ShowDebugInfoSettingsWindow(widget->GetInternalWidget());
-#endif
+    PODVector<UIWidget*> dest;
+    uiwidget->SearchWidgetClass( clssName, dest );
 
+    duk_push_array(ctx);
 
-    return 0;
+    for (unsigned ii = 0; ii < dest.Size(); ii++)
+    {
+        js_push_class_object_instance(ctx, dest[ii], "UIWidget");
+        duk_put_prop_index(ctx, -2, ii);
+    }
+
+    return 1;
 }
+
+static int UIWidget_SearchWidgetId(duk_context* ctx)
+{
+    const char* idName = duk_require_string(ctx, 0);
+    duk_push_this(ctx);
+ 
+    UIWidget* uiwidget = js_to_class_instance<UIWidget>(ctx, -1, 0);
+
+    PODVector<UIWidget*> dest;
+    uiwidget->SearchWidgetId( idName, dest );
+
+    duk_push_array(ctx);
+
+    for (unsigned i = 0; i < dest.Size(); i++)
+    {
+        js_push_class_object_instance(ctx, dest[i], "UIWidget");
+        duk_put_prop_index(ctx, -2, i);
+    }
+
+    return 1;
+}
+
+static int UIWidget_SearchWidgetText(duk_context* ctx)
+{
+    const char* textName = duk_require_string(ctx, 0);
+    duk_push_this(ctx);
+
+    UIWidget* uiwidget = js_to_class_instance<UIWidget>(ctx, -1, 0);
+
+    PODVector<UIWidget*> dest;
+    uiwidget->SearchWidgetText( textName, dest );
+
+    duk_push_array(ctx);
+
+    for (unsigned i = 0; i < dest.Size(); i++)
+    {
+        js_push_class_object_instance(ctx, dest[i], "UIWidget");
+        duk_put_prop_index(ctx, -2, i);
+    }
+
+    return 1;
+}
+
 
 void jsapi_init_ui(JSVM* vm)
 {
@@ -175,12 +201,6 @@ void jsapi_init_ui(JSVM* vm)
 
     duk_push_c_function(ctx, UI_DebugGetWrappedWidgetCount, 0);
     duk_put_prop_string(ctx, -2, "debugGetWrappedWidgetCount");
-
-    duk_push_c_function(ctx, UI_DebugGetUIKeepAliveCount, 0);
-    duk_put_prop_string(ctx, -2, "debugGetUIKeepAliveCount");
-
-    duk_push_c_function(ctx, UI_DebugShowSettingsWindow, 1);
-    duk_put_prop_string(ctx, -2, "debugShowSettingsWindow");
 
     duk_pop_2(ctx);
 
@@ -194,6 +214,14 @@ void jsapi_init_ui(JSVM* vm)
     duk_put_prop_string(ctx, -2, "getResizeToFitContentRect");
     duk_pop(ctx);
 
+    js_class_get_prototype(ctx, "Atomic", "UIWidget");
+    duk_push_c_function(ctx, UIWidget_SearchWidgetClass, 1);
+    duk_put_prop_string(ctx, -2, "searchWidgetClass");
+    duk_push_c_function(ctx, UIWidget_SearchWidgetId, 1);
+    duk_put_prop_string(ctx, -2, "searchWidgetId");
+    duk_push_c_function(ctx, UIWidget_SearchWidgetText, 1);
+    duk_put_prop_string(ctx, -2, "searchWidgetText");
+    duk_pop(ctx);
 
 }
 

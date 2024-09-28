@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Container/ArrayPtr.h>
@@ -11,33 +26,33 @@
 #include <Atomic/IO/File.h>
 #include <Atomic/IO/FileSystem.h>
 #include <Atomic/Resource/ResourceCache.h>
+#include <Atomic/Resource/JSONFile.h>
+#include <Atomic/Resource/ResourceEvents.h>
+
 #include <Atomic/Core/CoreEvents.h>
 #include <AtomicJS/Javascript/JSVM.h>
 
+#include <ToolCore/ToolEnvironment.h>
+#include <ToolCore/ToolSystem.h>
+#include <ToolCore/Project/Project.h>
+
+#include <AtomicWebView/WebViewEvents.h>
+#include <AtomicWebView/UIWebView.h>
+#include <AtomicWebView/WebClient.h>
+#include <AtomicWebView/WebMessageHandler.h>
+#include <AtomicWebView/WebTexture2D.h>
+
 #include "JSResourceEditor.h"
 
-#include "../Javascript/JSTheme.h"
-#include "../Javascript/JSASTSyntaxColorVisitor.h"
-
-#include <TurboBadger/tb_message_window.h>
-#include <TurboBadger/tb_editfield.h>
-#include <TurboBadger/tb_style_edit.h>
-#include <TurboBadger/tb_style_edit_content.h>
 
 using namespace tb;
+using namespace ToolCore;
 
 namespace AtomicEditor
 {
 
-JSResourceEditor ::JSResourceEditor(Context* context, const String &fullpath, UITabContainer *container) :
-    ResourceEditor(context, fullpath, container),
-    styleEdit_(0),
-    lineNumberList_(0),
-    editField_(0),
-    autocomplete_(0),
-    textDirty_(true),
-    textDelta_(0.0f),
-    currentFindPos_(-1)
+JSResourceEditor ::JSResourceEditor(Context* context, const String &fullpath, UITabContainer *container, const String &editorUrl) :
+    ResourceEditor(context, fullpath, container)
 {
 
     TBLayout* layout = new TBLayout();
@@ -50,476 +65,182 @@ JSResourceEditor ::JSResourceEditor(Context* context, const String &fullpath, UI
     TBContainer* c = new TBContainer();
     c->SetGravity(WIDGET_GRAVITY_ALL);
 
-    TBEditField* text = editField_ = new TBEditField();
-    text->SetMultiline(true);
-    text->SetWrapping(true);
-    text->SetGravity(WIDGET_GRAVITY_ALL);
-    text->SetStyling(true);
-    text->SetSkinBg(TBIDC("TextCode"));
-
-    TBFontDescription fd;
-    fd.SetID(TBIDC("Monaco"));
-    fd.SetSize(12);
-    text->SetFontDescription(fd);
-
-    SharedPtr<File> jsFile(GetSubsystem<ResourceCache>()->GetFile(fullpath));
-    assert(jsFile);
-
-    String source;
-    jsFile->ReadText(source);
-
-    String json;
-
-    JSASTProgram* program = NULL;
-
-    if (ParseJavascriptToJSON(source.CString(), json))
-    {
-        program = JSASTProgram::ParseFromJSON(fullpath, json);
-    }
-
-    text->SetText(source.CString());
-
-    lineNumberList_ = new TBSelectList();
-    lineNumberList_->SetFontDescription(fd);
-    lineNumberList_->SetSkinBg(TBIDC("LineNumberSelectList"));
-    lineNumberList_->GetScrollContainer()->SetScrollMode(SCROLL_MODE_OFF);
-    //lineNumberList_->GetScrollContainer()->SetIgnoreScrollEvents(true);
-    lineNumberList_->SetGravity(WIDGET_GRAVITY_ALL);
-    LayoutParams lp;
-    lp.max_w = 48;
-    lineNumberList_->SetLayoutParams(lp);
-
-    c->AddChild(text);
-
-    layout->AddChild(lineNumberList_);
     layout->AddChild(c);
-    layout->SetSpacing(0);
 
-    TBStyleEdit* sedit = text->GetStyleEdit();
-    TBTextTheme* theme = new TBTextTheme();
-    for (unsigned i = 0; i < TB_MAX_TEXT_THEME_COLORS; i++)
-        theme->themeColors[i] = TBColor(255, 255, 255);
+    webView_ = new UIWebView(context_, editorUrl);
+    webClient_ = webView_->GetWebClient();
+    messageHandler_ = new WebMessageHandler(context_);
+    webClient_->AddMessageHandler(messageHandler_);
 
-    theme->themeColors[JSTHEME_LITERAL_STRING].SetFromString("#E6DB74", 7);
+    webView_->GetWebTexture2D()->SetClearColor(Color(.23f, .23f, .23f, 1));
 
-    theme->themeColors[JSTHEME_LITERAL_NUMBER].SetFromString("#AE81FF", 7);
-    theme->themeColors[JSTHEME_LITERAL_REGEX].SetFromString("#AE81FF", 7);
-    theme->themeColors[JSTHEME_LITERAL_BOOLEAN].SetFromString("#AE81FF", 7);
-    theme->themeColors[JSTHEME_LITERAL_NULL].SetFromString("#AE81FF", 7);
+    SubscribeToEvent(messageHandler_, E_WEBMESSAGE, ATOMIC_HANDLER(JSResourceEditor, HandleWebMessage));
 
-    theme->themeColors[JSTHEME_FUNCTION].SetFromString("#66D9EF", 7);
-    theme->themeColors[JSTHEME_VAR].SetFromString("#66D9EF", 7);
+    SubscribeToEvent(E_RENAMERESOURCENOTIFICATION, ATOMIC_HANDLER(JSResourceEditor, HandleRenameResourceNotification));
 
+    c->AddChild(webView_->GetInternalWidget());
 
-    theme->themeColors[JSTHEME_KEYWORD].SetFromString("#f92672", 7);
-    theme->themeColors[JSTHEME_OPERATOR].SetFromString("#f92672", 7);
-
-    theme->themeColors[JSTHEME_CODE].SetFromString("#a6e22e", 7);
-    theme->themeColors[JSTHEME_COMMENT].SetFromString("#75715e", 7);
-
-    theme->themeColors[JSTHEME_FUNCTIONDECLARG].SetFromString("#FF9800", 7);
-
-    sedit->SetTextTheme(theme);
-
-    sedit->text_change_listener = this;
-
-    styleEdit_ = sedit;
-    UpdateLineNumbers();
-
-    if (program)
-    {
-        JSASTSyntaxColorVisitor syntaxColor(sedit);
-        syntaxColor.visit(program);
-    }
-
-    SubscribeToEvent(E_UPDATE, HANDLER(JSResourceEditor, HandleUpdate));
-
-    // FIXME: Set the size at the end of setup, so all children are updated accordingly
-    // future size changes will be handled automatically
-    IntRect rect = container_->GetContentRoot()->GetRect();
-    rootContentWidget_->SetSize(rect.Width(), rect.Height());
 }
 
 JSResourceEditor::~JSResourceEditor()
 {
+
 }
 
-void JSResourceEditor::FormatCode()
+String getNormalizedPath(const String& path)
 {
+    // Full path is the fully qualified path from the root of the filesystem.  In order
+    // to take advantage of the resource caching system, let's trim it down to just the
+    // path inside the resources directory including the Resources directory so that the casing
+    // is correct.
+    const String& RESOURCES_MARKER = "resources/";
+    return path.SubstringUTF8(path.ToLower().Find(RESOURCES_MARKER));
+}
 
-    TBStr text;
-    styleEdit_->GetText(text);
+// This needs to stay in place until these properties are accessible from the .ts side
+void JSResourceEditor::HandleRenameResourceNotification(StringHash eventType, VariantMap& eventData)
+{
+    using namespace RenameResourceNotification;
+    const String& newPath = eventData[P_NEWRESOURCEPATH].GetString();
+    const String& path = eventData[P_RESOURCEPATH].GetString();
 
-    if (text.Length())
+    webClient_->ExecuteJavaScript(ToString("HOST_resourceRenamed(\"%s\",\"%s\");", getNormalizedPath(path).CString(), getNormalizedPath(newPath).CString()));
+
+    if (fullpath_.Compare(path) == 0) {
+        fullpath_ = newPath;
+        SetModified(modified_);
+    }
+}
+
+// This needs to stay in place until there is a way for the .ts side to provide back a "success" method
+void JSResourceEditor::HandleWebMessage(StringHash eventType, VariantMap& eventData)
+{
+    using namespace WebMessage;
+
+    const String& request = eventData[P_REQUEST].GetString();
+    const String& EDITOR_CHANGE = "editorChange";
+    const String& EDITOR_SAVE_CODE = "editorSaveCode";
+    const String& EDITOR_SAVE_FILE = "editorSaveFile";
+
+    WebMessageHandler* handler = static_cast<WebMessageHandler*>(eventData[P_HANDLER].GetPtr());
+
+    // All messages come in as a JSON string with a "message" property describing what the message is
+    JSONValue jvalue;
+    if (JSONFile::ParseJSON(request, jvalue, false))
     {
-        String output;
-        if (BeautifyJavascript(text.CStr(), output))
+        String message = jvalue["message"].GetString();
+        if (message == EDITOR_CHANGE) {
+            SetModified(true);
+        }
+        else if (message == EDITOR_SAVE_CODE)
         {
-            if (output.Length())
+            String code = jvalue["payload"].GetString();
+            File file(context_, fullpath_, FILE_WRITE);
+            file.Write((void*) code.CString(), code.Length());
+            file.Close();
+        }
+        else if (message == EDITOR_SAVE_FILE)
+        {
+            // filename coming in should be a fully qualified path
+            String code = jvalue["payload"].GetString();
+            String fn = jvalue["filename"].GetString();
+
+            // NOTE: We only want to be able save into the resource directory, so check to see if the file coming in
+            // should live in the resource directory and also for safety check that there is no funky path navigation
+            // going on such as my/resource/../../../out.file
+            ToolSystem* tsys = GetSubsystem<ToolSystem>();
+            if (fn.Find(tsys->GetProject()->GetResourcePath(), 0, false) != String::NPOS
+                && fn.Find("..", 0) == String::NPOS )
             {
-                styleEdit_->selection.SelectAll();
-                styleEdit_->InsertText(output.CString(), output.Length());
+                    File file(context_, fn, FILE_WRITE);
+                    file.Write((void*) code.CString(), code.Length());
+                    file.Close();
+            } else {
+                ATOMIC_LOGWARNING("Ignoring attempt to write file: " + fn);
             }
         }
     }
 
+    handler->Success();
 
 }
 
-void JSResourceEditor::UpdateLineNumbers()
+void JSResourceEditor::FormatCode()
 {
-    if (!styleEdit_)
-        return;
-
-    TBGenericStringItemSource* lineSource = lineNumberList_->GetDefaultSource();
-
-    int lines = lineSource->GetNumItems();
-
-    int lineCount = styleEdit_->blocks.CountLinks();
-
-    if (lines == lineCount)
-        return;
-
-    while (lines > lineCount)
-    {
-        lineSource->DeleteItem(lineSource->GetNumItems() - 1);
-        lines --;
-    }
-
-    for (int i = lines; i < lineCount; i++)
-    {
-        String sline;
-        sline.AppendWithFormat("%i  ", i + 1);
-        TBGenericStringItem* item = new TBGenericStringItem(sline.CString());
-        lineSource->AddItem(item);
-
-    }
-
-    // item widgets don't exist until ValidateList
-    lineNumberList_->ValidateList();
-
-    for (int i = 0; i < lineCount; i++)
-    {
-        TBTextField* textField = (TBTextField* )lineNumberList_->GetItemWidget(i);
-
-        if (textField)
-        {
-            textField->SetTextAlign(TB_TEXT_ALIGN_RIGHT);
-            textField->SetSkinBg(TBIDC("TBSelectItemLineNumber"));
-        }
-
-    }
-
-}
-
-void JSResourceEditor::OnChange(TBStyleEdit* styleEdit)
-{
-    textDelta_ = 0.25f;
-    textDirty_ = true;
-
-    SetModified(true);
-    UpdateLineNumbers();
+    webClient_->ExecuteJavaScript("HOST_formatCode();");
 }
 
 bool JSResourceEditor::OnEvent(const TBWidgetEvent &ev)
 {
-    if (ev.type == EVENT_TYPE_KEY_DOWN)
-    {
-
-        if (ev.special_key == TB_KEY_ESC)
-        {
-            //SendEvent(E_FINDTEXTCLOSE);
-        }
-
-    }
-
     if (ev.type == EVENT_TYPE_SHORTCUT)
     {
         if (ev.ref_id == TBIDC("close"))
         {
             RequestClose();
-        }
+        } else if (ev.ref_id == TBIDC("undo")) {
+            // Need to physically send the CTRL/CMD+Z to the browser so that
+            // the internal editor responds appropriately.  The browser UNDO doesn't fire off
+            // the right events inside the editor.
+            VariantMap map;
+            map[KeyUp::P_KEY] = KEY_Z;
+            map[KeyUp::P_SCANCODE] = SCANCODE_Z;
+            #ifdef ATOMIC_PLATFORM_OSX
+            map["ForceSuperDown"] = true;
+            #else
+            map[KeyUp::P_QUALIFIERS] = QUAL_CTRL;
+            webClient_->SendFocusEvent();
+            #endif
+            webClient_->SendKeyEvent( StringHash("KeyDown"), map);
+        } else if (ev.ref_id == TBIDC("redo")) {
+            // Need to physically send the CTRL/CMD+SHIFT+Z to the browser so that
+            // the internal editor responds appropriately.  The browser REDO doesn't fire off
+            // the right events inside the editor.
+            VariantMap map;
+            map[KeyUp::P_KEY] = KEY_Z;
+            map[KeyUp::P_SCANCODE] = SCANCODE_Z;
+            #ifdef ATOMIC_PLATFORM_OSX
+            map[KeyUp::P_QUALIFIERS] = QUAL_SHIFT;
+            map["ForceSuperDown"] = true;
+            #else
+            map[KeyUp::P_QUALIFIERS] = QUAL_SHIFT | QUAL_CTRL;
+            webClient_->SendFocusEvent();
+            #endif
+            webClient_->SendKeyEvent( StringHash("KeyDown"), map);
+        } else {
+            String shortcut;
+            UI* ui = GetSubsystem<UI>();
+            ui->GetTBIDString(ev.ref_id, shortcut);
 
-        if (ev.ref_id == TBIDC("find"))
-        {
-            //using namespace FindTextOpen;
-            //SendEvent(E_FINDTEXTOPEN);
-        }
-        else if (ev.ref_id == TBIDC("findnext") || ev.ref_id == TBIDC("findprev"))
-        {
-            /*
-            String text;
-
-            FindTextWidget* finder = GetSubsystem<FindTextWidget>();
-            finder->GetFindText(text);
-
-            // TODO: get flags from finder
-            unsigned flags = FINDTEXT_FLAG_NONE;
-
-            if (ev.ref_id == TBIDC("findnext"))
-                flags |= FINDTEXT_FLAG_NEXT;
-            else if (ev.ref_id == TBIDC("findprev"))
-                flags |= FINDTEXT_FLAG_PREV;
-
-            flags |= FINDTEXT_FLAG_WRAP;
-
-            finder->Find(text, flags);
-            */
-        }
-        else if (ev.ref_id == TBIDC("cut") || ev.ref_id == TBIDC("copy") || ev.ref_id == TBIDC("paste")
-                 || ev.ref_id == TBIDC("selectall") || ev.ref_id == TBIDC("undo") || ev.ref_id == TBIDC("redo") )
-        {
-            editField_->OnEvent(ev);
+            webClient_->ExecuteJavaScript(ToString("HOST_invokeShortcut(\"%s\");", shortcut.CString()));
         }
     }
 
     return false;
 }
 
-void JSResourceEditor::HandleUpdate(StringHash eventType, VariantMap& eventData)
-{
-
-    if (!styleEdit_)
-        return;
-
-    // sync line number
-    lineNumberList_->GetScrollContainer()->ScrollTo(0, styleEdit_->scroll_y);
-    lineNumberList_->SetValue(styleEdit_->GetCaretLine());
-
-    // Timestep parameter is same no matter what event is being listened to
-    float timeStep = eventData[Update::P_TIMESTEP].GetFloat();
-
-    if (!textDirty_)
-        return;
-
-    if (textDelta_ > 0.0f)
-    {
-        textDelta_ -= timeStep;
-        if (textDelta_ < 0.0f)
-        {
-            textDelta_ = 0.0f;
-        }
-        else
-        {
-            return;
-        }
-    }
-
-    TBStr text;
-    styleEdit_->GetText(text);
-
-    JSASTProgram* program = NULL;
-    String json;
-    if (ParseJavascriptToJSON(text.CStr(), json))
-    {
-        program = JSASTProgram::ParseFromJSON("fullpath", json);
-
-        if (program)
-        {
-            JSASTSyntaxColorVisitor syntaxColor(styleEdit_);
-            syntaxColor.visit(program);
-            delete program;
-        }
-
-    }
-
-    textDirty_ = false;
-
-    editField_->SetFocus(WIDGET_FOCUS_REASON_UNKNOWN);
-
-}
-
 void JSResourceEditor::FindTextClose()
 {
-    editField_->SetFocus(WIDGET_FOCUS_REASON_UNKNOWN);
-    styleEdit_->selection.SelectNothing();
 }
 
 bool JSResourceEditor::FindText(const String& findText, unsigned flags)
 {
-    /*
-    unsigned findLength = findText.Length();
 
-    if (!findLength)
-        return true;
-
-    TBStr _source;
-    styleEdit_->GetText(_source);
-    String source = _source.CStr();
-
-    unsigned pos = String::NPOS;
-    int startPos = currentFindPos_;
-
-    if (currentFindPos_ == -1)
-        startPos = styleEdit_->caret.GetGlobalOfs();
-    else
-    {
-        if (flags & FINDTEXT_FLAG_NEXT)
-            startPos += findLength;
-    }
-
-    if (flags & FINDTEXT_FLAG_PREV)
-    {
-        String pretext = source.Substring(0, startPos);
-        pos = pretext.FindLast(findText, String::NPOS, flags & FINDTEXT_FLAG_CASESENSITIVE ? true : false);
-    }
-    else
-    {
-        pos = source.Find(findText, startPos, flags & FINDTEXT_FLAG_CASESENSITIVE ? true : false);
-    }
-
-    if (pos == String::NPOS)
-    {
-        if (flags & FINDTEXT_FLAG_WRAP)
-        {
-            if (flags & FINDTEXT_FLAG_PREV)
-            {
-                pos = source.FindLast(findText, String::NPOS, flags & FINDTEXT_FLAG_CASESENSITIVE ? true : false);
-            }
-            else
-            {
-                pos = source.Find(findText, 0, flags & FINDTEXT_FLAG_CASESENSITIVE ? true : false);
-            }
-        }
-
-        if (pos == String::NPOS)
-        {
-            styleEdit_->selection.SelectNothing();
-            return true;
-        }
-    }
-
-    currentFindPos_ = pos;
-
-    styleEdit_->caret.SetGlobalOfs((int) pos + findLength);
-
-    int height = styleEdit_->layout_height;
-
-    int newy = styleEdit_->caret.y - height/2;
-
-    styleEdit_->SetScrollPos(styleEdit_->scroll_x, newy);
-
-    styleEdit_->selection.Select(pos, pos + findLength);
-    */
     return true;
 }
 
 void JSResourceEditor::SetFocus()
 {
-    editField_->SetFocus(WIDGET_FOCUS_REASON_UNKNOWN);
+    //editField_->SetFocus(WIDGET_FOCUS_REASON_UNKNOWN);
 }
 
 void JSResourceEditor::GotoTokenPos(int tokenPos)
 {
-    styleEdit_->caret.SetGlobalOfs(tokenPos);
-
-    int height = styleEdit_->layout_height;
-
-    int newy = styleEdit_->caret.y - height/2;
-
-    styleEdit_->SetScrollPos(styleEdit_->scroll_x, newy);
-
+    webClient_->ExecuteJavaScript(ToString("HOST_gotoTokenPos(%d);", tokenPos));
 }
 
 void JSResourceEditor::GotoLineNumber(int lineNumber)
 {
-    int line = 0;
-    TBBlock *block = NULL;
-    for (block = styleEdit_->blocks.GetFirst(); block; block = block->GetNext())
-    {
-        if (lineNumber == line)
-            break;
-        line++;
-    }
-    if (!block)
-        return;
-
-    styleEdit_->caret.Place(block, 0);
-
-    int height = styleEdit_->layout_height;
-    int newy = styleEdit_->caret.y - height/2;
-
-    styleEdit_->SetScrollPos(styleEdit_->scroll_x, newy);
-
-}
-
-bool JSResourceEditor::ParseJavascriptToJSON(const char* source, String& json, bool loose)
-{
-
-    JSVM* vm = JSVM::GetJSVM(NULL);
-    duk_context* ctx = vm->GetJSContext();
-
-    int top = duk_get_top(ctx);
-
-    json.Clear();
-
-    duk_get_global_string(ctx, "require");
-    duk_push_string(ctx, "AtomicEditor/JavaScript/Lib/jsutils");
-    if (duk_pcall(ctx, 1))
-    {
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
-        duk_set_top(ctx, top);
-        return false;
-    }
-
-    duk_get_prop_string(ctx, -1, "parseToJSON");
-    duk_push_string(ctx, source);
-    bool ok = true;
-
-    if (duk_pcall(ctx, 1))
-    {
-        ok = false;
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
-    }
-    else
-    {
-        json = duk_to_string(ctx, -1);
-    }
-
-    duk_set_top(ctx, top);
-
-    return ok;
-}
-
-bool JSResourceEditor::BeautifyJavascript(const char* source, String& output)
-{
-    JSVM* vm = JSVM::GetJSVM(NULL);
-    duk_context* ctx = vm->GetJSContext();
-
-    int top = duk_get_top(ctx);
-
-    output.Clear();
-
-    duk_get_global_string(ctx, "require");
-    duk_push_string(ctx, "AtomicEditor/JavaScript/Lib/jsutils");
-
-    if (duk_pcall(ctx, 1))
-    {
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
-        duk_set_top(ctx, top);
-        return false;
-    }
-
-
-    duk_get_prop_string(ctx, -1, "jsBeautify");
-    duk_push_string(ctx, source);
-    bool ok = true;
-
-    if (duk_pcall(ctx, 1))
-    {
-        ok = false;
-        printf("Error: %s\n", duk_safe_to_string(ctx, -1));
-    }
-    else
-    {
-        output = duk_to_string(ctx, -1);
-    }
-
-    // ignore result
-    duk_set_top(ctx, top);
-
-    return ok;
-
+    webClient_->ExecuteJavaScript(ToString("HOST_gotoLineNumber(%d);", lineNumber));
 }
 
 bool JSResourceEditor::Save()
@@ -527,11 +248,7 @@ bool JSResourceEditor::Save()
     if (!modified_)
         return true;
 
-    TBStr text;
-    styleEdit_->GetText(text);
-    File file(context_, fullpath_, FILE_WRITE);
-    file.Write((void*) text.CStr(), text.Length());
-    file.Close();
+    webClient_->ExecuteJavaScript("HOST_saveCode();");
 
     SetModified(false);
 

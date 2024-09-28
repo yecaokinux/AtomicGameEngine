@@ -28,8 +28,8 @@ class btSerializer;
 #include <stdlib.h>
 #endif //DEBUG_CHECK_DEQUANTIZATION
 
-#include "../../LinearMath/btVector3.h"
-#include "../../LinearMath/btAlignedAllocator.h"
+#include "LinearMath/btVector3.h"
+#include "LinearMath/btAlignedAllocator.h"
 
 #ifdef BT_USE_DOUBLE_PRECISION
 #define btQuantizedBvhData btQuantizedBvhDoubleData
@@ -157,8 +157,8 @@ public:
 	virtual void processNode(int subPart, int triangleIndex) = 0;
 };
 
-#include "../../LinearMath/btAlignedAllocator.h"
-#include "../../LinearMath/btAlignedObjectArray.h"
+#include "LinearMath/btAlignedAllocator.h"
+#include "LinearMath/btAlignedObjectArray.h"
 
 
 
@@ -169,7 +169,7 @@ typedef btAlignedObjectArray<btBvhSubtreeInfo>		BvhSubtreeInfoArray;
 
 
 ///The btQuantizedBvh class stores an AABB tree that can be quickly traversed on CPU and Cell SPU.
-///It is used by the btBvhTriangleMeshShape as midphase, and by the btMultiSapBroadphase.
+///It is used by the btBvhTriangleMeshShape as midphase.
 ///It is recommended to use quantization for better performance and lower memory requirements.
 ATTRIBUTE_ALIGNED16(class) btQuantizedBvh
 {

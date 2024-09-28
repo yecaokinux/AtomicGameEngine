@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -53,13 +53,13 @@ CollisionShape2D::~CollisionShape2D()
 
 void CollisionShape2D::RegisterObject(Context* context)
 {
-    ACCESSOR_ATTRIBUTE("Trigger", IsTrigger, SetTrigger, bool, false, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Category Bits", GetCategoryBits, SetCategoryBits, int, 0, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Mask Bits", GetMaskBits, SetMaskBits, int, 0, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Group Index", GetGroupIndex, SetGroupIndex, int, 0, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Density", GetDensity, SetDensity, float, 0.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Friction", GetFriction, SetFriction, float, 0.2f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Restitution", GetRestitution, SetRestitution, float, 0.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Trigger", IsTrigger, SetTrigger, bool, false, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Category Bits", GetCategoryBits, SetCategoryBits, int, 0, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Mask Bits", GetMaskBits, SetMaskBits, int, 0, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Group Index", GetGroupIndex, SetGroupIndex, int, 0, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Density", GetDensity, SetDensity, float, 0.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Friction", GetFriction, SetFriction, float, 0.2f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Restitution", GetRestitution, SetRestitution, float, 0.0f, AM_DEFAULT);
 }
 
 void CollisionShape2D::OnSetEnabled()
@@ -210,7 +210,11 @@ void CollisionShape2D::CreateFixture()
         return;
 
     if (!rigidBody_)
-        return;
+    {
+        rigidBody_ = node_->GetComponent<RigidBody2D>(); // RigidBody2D can be created after CollisionShape2D
+        if (!rigidBody_)
+            return;
+    }
 
     b2Body* body = rigidBody_->GetBody();
     if (!body)
@@ -219,7 +223,11 @@ void CollisionShape2D::CreateFixture()
     // Chain shape must have atleast two vertices before creating fixture
     if (fixtureDef_.shape->m_type != b2Shape::e_chain || static_cast<const b2ChainShape*>(fixtureDef_.shape)->m_count >= 2)
     {
+        b2MassData massData;
+        body->GetMassData(&massData);
         fixture_ = body->CreateFixture(&fixtureDef_);
+        if (!rigidBody_->GetUseFixtureMass()) // Workaround for resetting mass in CreateFixture().
+            body->SetMassData(&massData);
         fixture_->SetUserData(this);
     }
 }
@@ -236,7 +244,11 @@ void CollisionShape2D::ReleaseFixture()
     if (!body)
         return;
 
+    b2MassData massData;
+    body->GetMassData(&massData);
     body->DestroyFixture(fixture_);
+    if (!rigidBody_->GetUseFixtureMass()) // Workaround for resetting mass in DestroyFixture().
+        body->SetMassData(&massData);
     fixture_ = 0;
 }
 
@@ -286,14 +298,13 @@ void CollisionShape2D::OnNodeSet(Node* node)
             CreateFixture();
             rigidBody_->AddCollisionShape2D(this);
         }
-        else
-            LOGERROR("No rigid body component in node, can not create collision shape");
     }
 }
 
 void CollisionShape2D::OnMarkedDirty(Node* node)
 {
-    Vector3 newWorldScale = node_->GetWorldScale();
+    // Use signed world scale to allow flipping of sprites by negative scale to work properly in regard to the collision shape
+    Vector3 newWorldScale = node_->GetSignedWorldScale();
 
     Vector3 delta = newWorldScale - cachedWorldScale_;
     if (delta.DotProduct(delta) < 0.01f)

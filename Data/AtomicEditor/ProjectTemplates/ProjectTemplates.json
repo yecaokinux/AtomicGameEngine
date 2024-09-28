@@ -1,0 +1,20 @@
+{
+    "project_2d": {
+        "desc": "",
+        "name": "2D Project",
+        "screenshot" : "Basic2D.png",
+        "folder" : "Project2D"
+    },
+    "project_3d": {
+        "desc": "",
+        "name": "3D Project",
+        "screenshot" : "Basic3D.png",
+        "folder" : "Project3D"
+    },
+    "project_empty": {
+        "desc": "",
+        "name": "Empty Project",
+        "screenshot": "Example.png",
+        "folder" : "EmptyProject"
+    }
+}

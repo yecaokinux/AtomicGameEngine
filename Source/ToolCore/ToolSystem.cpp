@@ -1,11 +1,27 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/Context.h>
+#include <Atomic/Core/CoreEvents.h>
 #include <Atomic/IO/FileSystem.h>
 #include <Atomic/Resource/ResourceCache.h>
 
@@ -14,9 +30,9 @@
 #include "Platform/PlatformWindows.h"
 #include "Platform/PlatformAndroid.h"
 #include "Platform/PlatformIOS.h"
+#include "Platform/PlatformLinux.h"
 
 #include "Assets/AssetDatabase.h"
-#include "Net/CurlManager.h"
 #include "License/LicenseSystem.h"
 #include "Build/BuildSystem.h"
 #include "Subprocess/SubprocessSystem.h"
@@ -29,25 +45,16 @@
 #include "Project/ProjectEvents.h"
 #include "Project/ProjectUserPrefs.h"
 
-#ifdef ATOMIC_DOTNET
-#include "NETTools/NETToolSystem.h"
-#endif
-
 namespace ToolCore
 {
 
 ToolSystem::ToolSystem(Context* context) : Object(context),
-    cli_(false)
+    updateDelta_(0.0f)
 {
     context_->RegisterSubsystem(new AssetDatabase(context_));
-    context_->RegisterSubsystem(new CurlManager(context_));
     context_->RegisterSubsystem(new LicenseSystem(context_));
     context_->RegisterSubsystem(new BuildSystem(context_));
     context_->RegisterSubsystem(new SubprocessSystem(context_));
-
-#ifdef ATOMIC_DOTNET
-    context_->RegisterSubsystem(new NETToolSystem(context_));
-#endif
 
     // platform registration
     RegisterPlatform(new PlatformMac(context));
@@ -55,10 +62,27 @@ ToolSystem::ToolSystem(Context* context) : Object(context),
     RegisterPlatform(new PlatformWindows(context));
     RegisterPlatform(new PlatformIOS(context));
     RegisterPlatform(new PlatformAndroid(context));
+    RegisterPlatform(new PlatformLinux(context));
+
+    SubscribeToEvent(E_UPDATE, ATOMIC_HANDLER(ToolSystem, HandleUpdate));
 }
 
 ToolSystem::~ToolSystem()
 {
+
+}
+
+void ToolSystem::HandleUpdate(StringHash eventType, VariantMap& eventData)
+{
+    using namespace Update;
+
+    updateDelta_ += eventData[P_TIMESTEP].GetFloat();
+    
+    if (updateDelta_ >= 0.5f)
+    {
+        updateDelta_ = 0.0f;
+        SendEvent(E_TOOLUPDATE);
+    }
 
 }
 

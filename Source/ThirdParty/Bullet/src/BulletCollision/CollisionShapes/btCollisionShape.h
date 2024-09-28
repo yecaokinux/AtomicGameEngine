@@ -16,10 +16,10 @@ subject to the following restrictions:
 #ifndef BT_COLLISION_SHAPE_H
 #define BT_COLLISION_SHAPE_H
 
-#include "../../LinearMath/btTransform.h"
-#include "../../LinearMath/btVector3.h"
-#include "../../LinearMath/btMatrix3x3.h"
-#include "../../BulletCollision/BroadphaseCollision/btBroadphaseProxy.h" //for the shape types
+#include "LinearMath/btTransform.h"
+#include "LinearMath/btVector3.h"
+#include "LinearMath/btMatrix3x3.h"
+#include "BulletCollision/BroadphaseCollision/btBroadphaseProxy.h" //for the shape types
 class btSerializer;
 
 
@@ -48,7 +48,7 @@ public:
 
 	virtual void	getBoundingSphere(btVector3& center,btScalar& radius) const;
 
-	///getAngularMotionDisc returns the maximus radius needed for Conservative Advancement to handle time-of-impact with rotations.
+	///getAngularMotionDisc returns the maximum radius needed for Conservative Advancement to handle time-of-impact with rotations.
 	virtual btScalar	getAngularMotionDisc() const;
 
 	virtual btScalar	getContactBreakingThreshold(btScalar defaultContactThresholdFactor) const;

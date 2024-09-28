@@ -20,8 +20,6 @@
 // THE SOFTWARE.
 //
 
-//--player --editor-resource-paths "/Users/josh/Dev/atomic/AtomicGameEngine/Data/AtomicPlayer/Resources/CoreData!/Users/josh/Dev/atomic/AtomicGameEngine/Data/AtomicPlayer/Resources/PlayerData!/Users/josh/Dev/atomic/AtomicExamples/UIExample/Resources"
-
 #include "../IO/Log.h"
 #include "../Input/InputEvents.h"
 
@@ -31,6 +29,7 @@
 #include "UILayout.h"
 #include "UIFontDescription.h"
 #include "UIView.h"
+#include "UISelectItem.h"
 
 using namespace tb;
 
@@ -42,14 +41,12 @@ UIWidget::UIWidget(Context* context, bool createWidget) : Object(context),
     preferredSize_(new UIPreferredSize()),
     multiTouch_(false)
 {
-    AddRef();
-
     if (createWidget)
     {
         widget_ = new TBWidget();
         widget_->SetDelegate(this);
         GetSubsystem<UI>()->WrapWidget(this, widget_);
-    }
+    }    
 
 }
 
@@ -193,23 +190,25 @@ void UIWidget::ConvertEvent(UIWidget *handler, UIWidget* target, const tb::TBWid
 
 void UIWidget::OnDelete()
 {
+    VariantMap eventData;
+    eventData[WidgetDeleted::P_WIDGET] = this;
+    this->SendEvent(E_WIDGETDELETED, eventData);
+
+    UnsubscribeFromAllEvents();
+
     if (widget_)
     {
         // if we don't have a UI subsystem, we are exiting
         UI* ui = GetSubsystem<UI>();
+
         if (ui)
+        {
             ui->UnwrapWidget(widget_);
+        }
     }
 
     widget_ = 0;
 
-    VariantMap eventData;
-    eventData[WidgetDeleted::P_WIDGET] = this;
-    SendEvent(E_WIDGETDELETED, eventData);
-
-    UnsubscribeFromAllEvents();
-
-    ReleaseRef();
 }
 
 void UIWidget::AddChildAfter(UIWidget* child, UIWidget* otherChild)
@@ -332,12 +331,14 @@ void UIWidget::SetRect(IntRect rect)
 }
 
 
-void UIWidget::SetSize(int width, int height)
+bool UIWidget::SetSize(int width, int height)
 {
     if (!widget_)
-        return;
+        return false;
 
     widget_->SetSize(width, height);
+
+    return true;
 }
 
 void UIWidget::Invalidate()
@@ -346,6 +347,96 @@ void UIWidget::Invalidate()
         return;
 
     widget_->Invalidate();
+}
+
+/// searches for specified widget ID from the top of the widget tree, returns the 1st one found.
+UIWidget *UIWidget::FindWidget ( const String& searchid )
+{
+    if (!widget_)
+        return NULL;
+
+    TBWidget* child = widget_->FindWidget(TBID(searchid.CString()));
+
+    if (!child)
+        return 0;
+
+    UI* ui = GetSubsystem<UI>();
+    return ui->WrapWidget(child);
+}
+
+void UIWidget::PrintPrettyTree()
+{
+    if (!widget_)
+        return;
+
+    widget_->PrintPretty("", true);
+}
+
+/// return all of the widgets of the specified classname
+void UIWidget::SearchWidgetClass ( const String& className, PODVector<UIWidget*> &results ) 
+{
+    results.Clear();
+
+    if (!widget_)
+        return;
+
+    tb::TBValue tbval(TBValue::TYPE_ARRAY); // TB array of values
+    tbval.SetArray(new tb::TBValueArray(), TBValue::SET_AS_STATIC); // dont delete pointers on destruction
+    widget_->SearchWidgetClass(className.CString(), tbval ); // visit all children for search
+
+    UI* ui = GetSubsystem<UI>();
+    int nn=0;
+    for ( nn=0; nn<tbval.GetArrayLength(); nn++ ) // copy tbwidget ptr to uiwidget ptr
+    {
+        tb::TBWidget *tbw = (tb::TBWidget *)tbval.GetArray()->GetValue(nn)->GetObject();
+        UIWidget *wrp = ui->WrapWidget(tbw);
+        results.Push( wrp );
+    }
+}
+
+///  return all of the widgets of the specified id
+void UIWidget::SearchWidgetId ( const String& searchid, PODVector<UIWidget*> &results )
+{
+
+    results.Clear();
+
+    if (!widget_)
+        return;
+
+    tb::TBValue tbval(TBValue::TYPE_ARRAY);
+    tbval.SetArray(new tb::TBValueArray(), TBValue::SET_AS_STATIC);
+    widget_->SearchWidgetId(TBID(searchid.CString()), tbval );
+
+    UI* ui = GetSubsystem<UI>();
+    int nn=0;
+    for ( nn=0; nn<tbval.GetArrayLength(); nn++ )
+    {
+        tb::TBWidget *tbw = (tb::TBWidget *)tbval.GetArray()->GetValue(nn)->GetObject();
+        UIWidget *wrp = ui->WrapWidget(tbw);
+        results.Push( wrp );
+    }
+}
+
+/// return all of the widgets with the specified text
+void UIWidget::SearchWidgetText ( const String& searchText, PODVector<UIWidget*> &results )
+{
+    results.Clear();
+
+    if (!widget_)
+        return;
+
+    tb::TBValue tbval(TBValue::TYPE_ARRAY);
+    tbval.SetArray(new tb::TBValueArray(), TBValue::SET_AS_STATIC);
+    widget_->SearchWidgetText(searchText.CString(), tbval );
+
+    UI* ui = GetSubsystem<UI>();
+    int nn=0;
+    for ( nn=0; nn<tbval.GetArrayLength(); nn++ )
+    {
+        tb::TBWidget *tbw = (tb::TBWidget *)tbval.GetArray()->GetValue(nn)->GetObject();
+        UIWidget *wrp = ui->WrapWidget(tbw);
+        results.Push( wrp );
+    }
 }
 
 void UIWidget::Center()
@@ -427,6 +518,317 @@ void UIWidget::SetFontDescription(UIFontDescription* fd)
 
     widget_->SetFontDescription(*(fd->GetTBFontDescription()));
 
+}
+
+void UIWidget::SetFontId(const String& fontId)
+{
+    if (!widget_)
+        return;
+
+    tb::TBFontDescription fd(widget_->GetFontDescription());
+    fd.SetID(fontId.CString());
+    widget_->SetFontDescription(fd);
+}
+
+String UIWidget::GetFontId()
+{
+    if (!widget_)
+        return "";
+
+    tb::TBFontDescription fd(widget_->GetFontDescription());
+    if (!g_font_manager->HasFontFace(fd))
+    {
+        return "";
+    }
+    return g_font_manager->GetFontInfo(fd.GetID())->GetName();
+}
+
+void UIWidget::SetFontSize(int size)
+{
+    if (!widget_)
+        return;
+
+    tb::TBFontDescription fd(widget_->GetFontDescription());
+    fd.SetSize(size);
+    widget_->SetFontDescription(fd);
+}
+
+int UIWidget::GetFontSize()
+{
+    if (!widget_)
+        return 0;
+
+    tb::TBFontDescription fd(widget_->GetFontDescription());
+    return fd.GetSize();
+}
+
+void UIWidget::SetLayoutWidth(int width)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.SetWidth(width);
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutWidth()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->pref_w;
+}
+
+void UIWidget::SetLayoutHeight(int height)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.SetHeight(height);
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutHeight()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->pref_h;
+}
+
+void UIWidget::SetLayoutPrefWidth(int width)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.pref_w = width;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutPrefWidth()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->pref_w;
+}
+
+void UIWidget::SetLayoutPrefHeight(int height)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.pref_h = height;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutPrefHeight()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->pref_h;
+}
+
+void UIWidget::SetLayoutMinWidth(int width)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.min_w = width;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutMinWidth()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->min_w;
+}
+
+void UIWidget::SetLayoutMinHeight(int height)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.min_h = height;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutMinHeight()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->min_h;
+}
+
+void UIWidget::SetLayoutMaxWidth(int width)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.max_w = width;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutMaxWidth()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->max_w;
+}
+
+void UIWidget::SetLayoutMaxHeight(int height)
+{
+    if (!widget_)
+        return;
+
+    tb::LayoutParams lp;
+
+    const tb::LayoutParams *oldLp(widget_->GetLayoutParams());
+    if (oldLp)
+        lp = *oldLp;
+
+    lp.max_h = height;
+    widget_->SetLayoutParams(lp);
+}
+
+int UIWidget::GetLayoutMaxHeight()
+{
+    if (!widget_)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    const tb::LayoutParams *lp(widget_->GetLayoutParams());
+    if (!lp)
+        return tb::LayoutParams::UNSPECIFIED;
+
+    return lp->max_h;
+}
+
+void UIWidget::SetOpacity(float opacity)
+{
+    if (!widget_)
+        return;
+
+    widget_->SetOpacity(opacity);
+}
+
+float UIWidget::GetOpacity()
+{
+    if (!widget_)
+        return -0.0f;
+
+    return widget_->GetOpacity();
+}
+
+void UIWidget::SetAutoOpacity(float autoOpacity)
+{
+    if (!widget_)
+        return;
+
+    if (autoOpacity == 0.0f)
+    {
+        widget_->SetOpacity(autoOpacity);
+        widget_->SetVisibilility(tb::WIDGET_VISIBILITY_INVISIBLE);
+    }
+    else
+    {
+        widget_->SetVisibilility(tb::WIDGET_VISIBILITY_VISIBLE);
+        widget_->SetOpacity(autoOpacity);
+    }
+}
+
+float UIWidget::GetAutoOpacity()
+{
+    if (!widget_)
+        return -0.0f;
+
+    float autoOpacity(widget_->GetOpacity());
+
+    if (autoOpacity == 0.0f)
+    {
+        if (widget_->GetVisibility() == tb::WIDGET_VISIBILITY_VISIBLE)
+            return 0.0001f; // Don't say that it's completly invisible.
+    }
+    else
+    {
+        if (widget_->GetVisibility() != tb::WIDGET_VISIBILITY_VISIBLE)
+            return 0.0f; // Say it's invisible.
+    }
+    return autoOpacity;
 }
 
 void UIWidget::DeleteAllChildren()
@@ -524,7 +926,7 @@ void UIWidget::SetFocus()
 
 }
 
-bool UIWidget::GetFocus()
+bool UIWidget::GetFocus() const
 {
     if (!widget_)
         return false;
@@ -593,6 +995,24 @@ double UIWidget::GetValue()
 
 }
 
+void UIWidget::Enable()
+{
+    if (!widget_)
+        return;
+
+    widget_->SetState(WIDGET_STATE_DISABLED, false);
+
+}
+
+void UIWidget::Disable()
+{
+
+    if (!widget_)
+        return;
+
+    widget_->SetState(WIDGET_STATE_DISABLED, true);
+
+}
 
 bool UIWidget::GetState(UI_WIDGET_STATE state)
 {
@@ -644,6 +1064,12 @@ UIView* UIWidget::GetView()
     }
 
     return 0;
+}
+
+
+void UIWidget::OnResized(int old_w, int old_h)
+{
+    // default implementation does nothing
 }
 
 void UIWidget::OnFocusChanged(bool focused)
@@ -854,7 +1280,27 @@ void UIWidget::SetTooltip(const String& tooltip)
         return;
 
     widget_->SetTooltip(tooltip.CString());
+
 }
 
+IntVector2 UIWidget::ConvertToRoot(const IntVector2 position) const
+{
+    IntVector2 result = position;
+
+    if (widget_)
+        widget_->ConvertToRoot(result.x_, result.y_);
+
+    return result;
+}
+
+IntVector2 UIWidget::ConvertFromRoot(const IntVector2 position) const
+{
+    IntVector2 result = position;
+
+    if (widget_)
+        widget_->ConvertFromRoot(result.x_, result.y_);
+
+    return result;
+}
 
 }

@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/Object.h>
@@ -17,12 +32,13 @@ namespace ToolCore
 
 class ProjectUserPrefs;
 class ProjectBuildSettings;
+class ProjectSettings;
 
 class Project : public Object
 {
     friend class ProjectFile;
 
-    OBJECT(Project);
+    ATOMIC_OBJECT(Project, Object);
 
 public:
     /// Construct.
@@ -51,15 +67,14 @@ public:
     bool IsScriptsDirOrFile(const String& fullPath);
     bool IsModulesDirOrFile(const String& fullPath);
 
-    void AddPlatform(PlatformID platformID);
-    bool ContainsPlatform(PlatformID platformID);
-    void RemovePlatform(PlatformID platformID);
+    bool GetSupportsPlatform(const String& platform) const;
 
     bool IsDirty() { return dirty_; }
     void SetDirty() { if (!loading_) dirty_ = true; }
 
     ProjectBuildSettings* GetBuildSettings() { return buildSettings_; }
     ProjectUserPrefs* GetUserPrefs() { return userPrefs_; }
+    ProjectSettings* GetProjectSettings() { return projectSettings_; }
 
     const String& GetProjectPath() const { return projectPath_; }
     const String& GetProjectFilePath() { return projectFilePath_; }
@@ -71,6 +86,7 @@ public:
 
     void SaveBuildSettings();
     bool LoadBuildSettings();
+    bool LoadProjectSettings();
 
     void SaveUserPrefs();
     bool LoadUserPrefs();
@@ -93,8 +109,7 @@ private:
 
     SharedPtr<ProjectUserPrefs> userPrefs_;
     SharedPtr<ProjectBuildSettings> buildSettings_;
-
-    List<PlatformID> platforms_;
+    SharedPtr<ProjectSettings> projectSettings_;
 
 };
 

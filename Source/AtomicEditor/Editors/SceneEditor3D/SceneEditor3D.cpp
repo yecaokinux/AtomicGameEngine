@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/Log.h>
@@ -29,6 +44,7 @@
 #include <ToolCore/Project/ProjectUserPrefs.h>
 #include <ToolCore/Assets/AssetDatabase.h>
 #include <ToolCore/Assets/Asset.h>
+#include <ToolCore/Assets/SceneImporter.h>
 
 
 #include "../../EditorMode/AEEditorEvents.h"
@@ -71,24 +87,19 @@ SceneEditor3D::SceneEditor3D(Context* context, const String &fullpath, UITabCont
     sceneView_ = new SceneView3D(context_, this);
     editHistory_ = new SceneEditHistory(context, this);
 
-    // EARLY ACCESS
-    if (fullpath.Find(String("ToonTown")) != String::NPOS)
+    AssetDatabase* assetDB = GetSubsystem<AssetDatabase>();
+    Asset* sceneAsset = assetDB->GetAssetByPath(fullpath);
+
+    if (sceneAsset)
     {
-        sceneView_->GetCameraNode()->SetWorldPosition(Vector3(-119.073f, 76.1121f, 16.47763f));
-        Quaternion q(0.55f, 0.14f,  0.8f, -0.2f);
-        sceneView_->SetYaw(q.YawAngle());
-        sceneView_->SetPitch(q.PitchAngle());
-        sceneView_->GetCameraNode()->SetWorldRotation(q);
+        sceneImporter_ = static_cast<SceneImporter*>(sceneAsset->GetImporter());
+        sceneView_->GetCameraNode()->SetWorldPosition(sceneImporter_->GetSceneCamPosition());
+        sceneView_->SetPitch(sceneImporter_->GetSceneCamRotation().PitchAngle());
+        sceneView_->SetYaw(sceneImporter_->GetSceneCamRotation().YawAngle());
     }
     else
     {
-        Node* playerSpawn = scene_->GetChild("PlayerInfoStart", true);
-        if (playerSpawn)
-        {
-            sceneView_->GetCameraNode()->SetPosition(playerSpawn->GetPosition());
-            sceneView_->SetYaw(playerSpawn->GetRotation().EulerAngles().y_);
-        }
-
+        ATOMIC_LOGERRORF("SceneEditor3D::SceneEditor3D - Unable to get scene asset");
     }
 
     sceneView_->SetGravity(UI_GRAVITY_ALL);
@@ -100,26 +111,26 @@ SceneEditor3D::SceneEditor3D(Context* context, const String &fullpath, UITabCont
     gizmo3D_->Show();
     UpdateGizmoSnapSettings();
 
-    SubscribeToEvent(E_UPDATE, HANDLER(SceneEditor3D, HandleUpdate));
+    SubscribeToEvent(E_UPDATE, ATOMIC_HANDLER(SceneEditor3D, HandleUpdate));
 
-    SubscribeToEvent(E_GIZMOEDITMODECHANGED, HANDLER(SceneEditor3D, HandleGizmoEditModeChanged));
-    SubscribeToEvent(E_GIZMOAXISMODECHANGED, HANDLER(SceneEditor3D, HandleGizmoAxisModeChanged));
+    SubscribeToEvent(E_GIZMOEDITMODECHANGED, ATOMIC_HANDLER(SceneEditor3D, HandleGizmoEditModeChanged));
+    SubscribeToEvent(E_GIZMOAXISMODECHANGED, ATOMIC_HANDLER(SceneEditor3D, HandleGizmoAxisModeChanged));
 
     // FIXME: Set the size at the end of setup, so all children are updated accordingly
     // future size changes will be handled automatically
     IntRect rect = container_->GetContentRoot()->GetRect();
     rootContentWidget_->SetSize(rect.Width(), rect.Height());
 
-    SubscribeToEvent(E_PROJECTUSERPREFSAVED, HANDLER(SceneEditor3D, HandleUserPrefSaved));
+    SubscribeToEvent(E_PROJECTUSERPREFSAVED, ATOMIC_HANDLER(SceneEditor3D, HandleUserPrefSaved));
 
-    SubscribeToEvent(scene_, E_SCENEEDITNODECREATED, HANDLER(SceneEditor3D, HandleSceneEditNodeCreated));
+    SubscribeToEvent(scene_, E_SCENEEDITNODECREATED, ATOMIC_HANDLER(SceneEditor3D, HandleSceneEditNodeCreated));
 
-    SubscribeToEvent(E_EDITORPLAYERSTARTED, HANDLER(SceneEditor3D, HandlePlayStarted));
-    SubscribeToEvent(E_EDITORPLAYERSTOPPED, HANDLER(SceneEditor3D, HandlePlayStopped));
-    SubscribeToEvent(scene_, E_SCENEEDITSCENEMODIFIED, HANDLER(SceneEditor3D, HandleSceneEditSceneModified));
+    SubscribeToEvent(E_EDITORPLAYERSTARTED, ATOMIC_HANDLER(SceneEditor3D, HandlePlayStarted));
+    SubscribeToEvent(E_EDITORPLAYERSTOPPED, ATOMIC_HANDLER(SceneEditor3D, HandlePlayStopped));
+    SubscribeToEvent(scene_, E_SCENEEDITSCENEMODIFIED, ATOMIC_HANDLER(SceneEditor3D, HandleSceneEditSceneModified));
 
-    SubscribeToEvent(scene_, E_CUBEMAPRENDERBEGIN, HANDLER(SceneEditor3D, HandleCubemapRenderBegin));
-    SubscribeToEvent(scene_, E_CUBEMAPRENDEREND, HANDLER(SceneEditor3D, HandleCubemapRenderEnd));
+    SubscribeToEvent(scene_, E_CUBEMAPRENDERBEGIN, ATOMIC_HANDLER(SceneEditor3D, HandleCubemapRenderBegin));
+    SubscribeToEvent(scene_, E_CUBEMAPRENDEREND, ATOMIC_HANDLER(SceneEditor3D, HandleCubemapRenderEnd));
 
     RegisterSceneEditor();
 
@@ -218,7 +229,7 @@ void SceneEditor3D::HandlePlayStopped(StringHash eventType, VariantMap& eventDat
 }
 
 void SceneEditor3D::HandleGizmoEditModeChanged(StringHash eventType, VariantMap& eventData)
-{    
+{
     EditMode mode = (EditMode) (eventData[GizmoEditModeChanged::P_MODE].GetInt());
     gizmo3D_->SetEditMode(mode);
 }
@@ -236,6 +247,17 @@ void SceneEditor3D::Close(bool navigateToAvailableResource)
     VariantMap data;
     data["Scene"] = scene_;
     SendEvent("EditorSceneClosed", data);
+
+    selection_ = 0;
+    editHistory_ = 0;
+
+    if (sceneImporter_.NotNull())
+    {
+        sceneImporter_->SetSceneCamPosition(sceneView_->GetCameraNode()->GetWorldPosition());
+        sceneImporter_->SetSceneCamRotation(sceneView_->GetCameraNode()->GetWorldRotation());
+        sceneImporter_->GetAsset()->Save();
+        sceneImporter_ = nullptr;
+    }
 
     ResourceEditor::Close(navigateToAvailableResource);
 }

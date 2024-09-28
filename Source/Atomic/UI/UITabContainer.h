@@ -27,9 +27,11 @@
 namespace Atomic
 {
 
-class UITabContainer : public UIWidget
+class UILayout;
+
+class ATOMIC_API UITabContainer : public UIWidget
 {
-    OBJECT(UITabContainer)
+    ATOMIC_OBJECT(UITabContainer, UIWidget)
 
 public:
 
@@ -40,6 +42,16 @@ public:
     void SetCurrentPage(int page);
 
     UIWidget* GetCurrentPageWidget();
+
+    UILayout* GetTabLayout();
+    
+    int GetCurrentPage(); /// returns the current page number
+    bool DeletePage( int page ); /// deletes a tab + page, returns true if successful
+    void AddTabPageFile ( const String &tabname, const String &layoutFile, bool selecttab = true ); /// adds a tab + page from file
+    void AddTabPageWidget ( const String &tabname, UIWidget *widget, bool selecttab = true ); /// adds a tab + page widget(s)
+
+    void UndockPage ( int page ); /// undocks the page into a window with the tab name, and removes the tab
+    bool DockWindow ( String windowTitle ); /// docks content from a UIDockWindow with specified title
 
 protected:
 

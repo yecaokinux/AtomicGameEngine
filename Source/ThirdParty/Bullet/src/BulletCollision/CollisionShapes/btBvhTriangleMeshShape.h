@@ -18,7 +18,7 @@ subject to the following restrictions:
 
 #include "btTriangleMeshShape.h"
 #include "btOptimizedBvh.h"
-#include "../../LinearMath/btAlignedAllocator.h"
+#include "LinearMath/btAlignedAllocator.h"
 #include "btTriangleInfoMap.h"
 
 ///The btBvhTriangleMeshShape is a static-triangle mesh shape, it can only be used for fixed/non-moving objects.
@@ -39,7 +39,11 @@ ATTRIBUTE_ALIGNED16(class) btBvhTriangleMeshShape : public btTriangleMeshShape
 
 	bool m_useQuantizedAabbCompression;
 	bool m_ownsBvh;
+#ifdef __clang__
+	bool m_pad[11] __attribute__((unused));////need padding due to alignment
+#else
 	bool m_pad[11];////need padding due to alignment
+#endif
 
 public:
 

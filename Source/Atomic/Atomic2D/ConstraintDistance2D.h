@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,7 @@ namespace Atomic
 /// 2D distance constraint component.
 class ATOMIC_API ConstraintDistance2D : public Constraint2D
 {
-    OBJECT(ConstraintDistance2D);
+    ATOMIC_OBJECT(ConstraintDistance2D, Constraint2D);
 
 public:
     /// Construct.
@@ -48,6 +48,8 @@ public:
     void SetFrequencyHz(float frequencyHz);
     /// Set damping ratio.
     void SetDampingRatio(float dampingRatio);
+    /// Set length.
+    void SetLength(float length);
 
     /// Return owner body anchor.
     const Vector2& GetOwnerBodyAnchor() const { return ownerBodyAnchor_; }
@@ -60,6 +62,9 @@ public:
 
     /// Return damping ratio.
     float GetDampingRatio() const { return jointDef_.dampingRatio; }
+
+    /// Return length.
+    float GetLength() const { return jointDef_.length; }
 
 private:
     /// Return joint def.

@@ -1,27 +1,33 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
 
+#include <rapidjson/document.h>
 #include <Atomic/Container/List.h>
 #include <Atomic/Core/Object.h>
 
 using namespace Atomic;
 
-namespace rapidjson
-{
-template<typename CharType> struct UTF8;
-class CrtAllocator;
-template <typename BaseAllocator> class MemoryPoolAllocator;
-template <typename Encoding, typename Allocator> class GenericValue;
-typedef GenericValue<UTF8<char>, MemoryPoolAllocator<CrtAllocator> > Value;
-template <typename Encoding, typename Allocator> class GenericDocument;
-typedef GenericDocument<UTF8<char>, MemoryPoolAllocator<CrtAllocator> > Document;
-}
 
 
 namespace ToolCore
@@ -787,7 +793,7 @@ private:
 
 class Importer: public Object
 {
-    OBJECT(Importer);
+    ATOMIC_OBJECT(Importer, Object);
 
 public:
 
@@ -800,7 +806,7 @@ private:
 
 class JSONSceneImporter: public Importer
 {
-    OBJECT(JSONSceneImporter);
+    ATOMIC_OBJECT(JSONSceneImporter, Importer);
 
 public:
 

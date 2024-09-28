@@ -41,9 +41,9 @@
 namespace Atomic
 {
 
-class IPCChannel : public Object, public Thread
+class ATOMIC_API IPCChannel : public Object, public Thread
 {
-    OBJECT(IPCChannel)
+    ATOMIC_OBJECT(IPCChannel, Object)
 
 public:
 
@@ -57,6 +57,8 @@ public:
     bool Receive();
 
     void PostMessage(StringHash eventType, VariantMap& eventData);
+
+    IPCProcess* GetOtherProcess() { return otherProcess_; }
 
 protected:
 

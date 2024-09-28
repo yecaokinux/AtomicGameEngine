@@ -1,18 +1,16 @@
+set(JAVASCRIPT_BINDINGS_PLATFORM "LINUX")
+
 include(AtomicDesktop)
 
-set (JAVASCRIPT_BINDINGS_PLATFORM "LINUX")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-invalid-offsetof -fPIC")
 
-add_definitions(-DATOMIC_PLATFORM_LINUX -DATOMIC_OPENGL -DKNET_UNIX -DHAVE_INT64_T)
-
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-invalid-offsetof -std=gnu++0x")
+if( CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX )
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-warn-absolute-paths")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-warn-absolute-paths")
+endif()
 
 find_package(PkgConfig REQUIRED)
-
-#for native file dialog
+# for native file dialog
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
 
-list (APPEND ATOMIC_LINK_LIBRARIES pthread GLEW GL dl)
-
-
-add_definitions(-DATOMIC_PLATFORM_LINUX)
-add_definitions(-DATOMIC_OPENGL -Wno-warn-absolute-paths -DATOMIC_TBUI)

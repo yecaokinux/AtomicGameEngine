@@ -1,14 +1,30 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/IOEvents.h>
 #include <Atomic/IO/Log.h>
 #include <Atomic/Input/InputEvents.h>
 #include <Atomic/Core/ProcessUtils.h>
+#include <Atomic/Core/CoreEvents.h>
 #include <Atomic/Graphics/GraphicsEvents.h>
 #include <Atomic/Graphics/Graphics.h>
 #include <Atomic/Graphics/Camera.h>
@@ -22,7 +38,7 @@
 #include <AtomicJS/Javascript/JSEvents.h>
 #include <AtomicJS/Javascript/JSIPCEvents.h>
 
-#include "AEPlayerEvents.h"
+#include <AtomicApp/Player/IPCPlayerAppEvents.h>
 
 #include "AEPlayerMode.h"
 
@@ -44,12 +60,15 @@ PlayerMode::PlayerMode(Context* context) :
 
     ipc_ = GetSubsystem<IPC>();
 
-    SubscribeToEvent(E_LOGMESSAGE, HANDLER(PlayerMode, HandleLogMessage));
-    SubscribeToEvent(E_JSERROR, HANDLER(PlayerMode, HandleJSError));
-    SubscribeToEvent(E_EXITREQUESTED, HANDLER(PlayerMode, HandleExitRequest));
+    SubscribeToEvent(E_LOGMESSAGE, ATOMIC_HANDLER(PlayerMode, HandleLogMessage));
+    SubscribeToEvent(E_JSERROR, ATOMIC_HANDLER(PlayerMode, HandleJSError));
+    SubscribeToEvent(E_EXITREQUESTED, ATOMIC_HANDLER(PlayerMode, HandleExitRequest));
+    SubscribeToEvent(E_SCREENMODE, ATOMIC_HANDLER(PlayerMode, HandlePlayerWindowChanged));
+    SubscribeToEvent(E_WINDOWPOS, ATOMIC_HANDLER(PlayerMode, HandlePlayerWindowChanged));
+    SubscribeToEvent(E_UPDATESPAUSEDRESUMED, ATOMIC_HANDLER(PlayerMode, HandleUpdatesPausedResumed));
 
     // BEGIN LICENSE MANAGEMENT
-    SubscribeToEvent(E_BEGINVIEWRENDER, HANDLER(PlayerMode, HandleViewRender));
+    SubscribeToEvent(E_BEGINVIEWRENDER, ATOMIC_HANDLER(PlayerMode, HandleViewRender));
     // END LICENSE MANAGEMENT
 }
 
@@ -75,9 +94,12 @@ void PlayerMode::HandleIPCInitialize(StringHash eventType, VariantMap& eventData
 
     // END LICENSE MANAGEMENT
 
-    SystemUI::DebugHud* debugHud = GetSubsystem<SystemUI::DebugHud>();
+    DebugHud* debugHud = GetSubsystem<DebugHud>();
     if (debugHud)
+    {
         debugHud->SetMode(eventData["debugHudMode"].GetUInt());
+        debugHud->SetProfilerMode((DebugHudProfileMode) eventData["debugHudProfilerMode"].GetUInt());
+    }
 
 }
 
@@ -104,7 +126,7 @@ void PlayerMode::ProcessArguments() {
 
             else if (argument.StartsWith("--ipc-server=") || argument.StartsWith("--ipc-client="))
             {
-                LOGINFOF("Starting IPCWorker %s", argument.CString());
+                ATOMIC_LOGINFOF("Starting IPCWorker %s", argument.CString());
 
                 Vector<String> ipc = argument.Split(argument.CString(), '=');
 
@@ -145,7 +167,7 @@ void PlayerMode::ProcessArguments() {
     if (id > 0 && fd_[0] != INVALID_IPCHANDLE_VALUE && fd_[1] != INVALID_IPCHANDLE_VALUE)
     {
         launchedByEditor_ = true;
-        SubscribeToEvent(E_IPCINITIALIZE, HANDLER(PlayerMode, HandleIPCInitialize));
+        SubscribeToEvent(E_IPCINITIALIZE, ATOMIC_HANDLER(PlayerMode, HandleIPCInitialize));
         ipc_->InitWorker((unsigned) id, fd_[0], fd_[1]);
     }
 }
@@ -172,7 +194,7 @@ void PlayerMode::HandleJSError(StringHash eventType, VariantMap& eventData)
 
         ipc_->SendEventToBroker(E_IPCJSERROR, ipcErrorData);
 
-        LOGERROR("SENDING E_IPCJSERROR");
+        ATOMIC_LOGERROR("SENDING E_IPCJSERROR");
 
     }
 
@@ -221,7 +243,7 @@ void PlayerMode::HandleViewRender(StringHash eventType, VariantMap& eventData)
         done = true;
 
         messageBox_ = GetSubsystem<UI>()->ShowSystemMessageBox("3D Module License Required", "A 3D Module License is required to display 3D content.\n\nUpgrade to Atomic Pro for all features and platforms.");
-        SubscribeToEvent(messageBox_, SystemUI::E_MESSAGEACK, HANDLER(PlayerMode, HandleMessageAck));
+        SubscribeToEvent(messageBox_, E_MESSAGEACK, ATOMIC_HANDLER(PlayerMode, HandleMessageAck));
 
         if (brokerActive_)
         {
@@ -239,7 +261,7 @@ void PlayerMode::HandleViewRender(StringHash eventType, VariantMap& eventData)
 
 }
 
-void PlayerMode::HandleExitRequest(StringHash eventType, VariantMap& eventData)
+void PlayerMode::HandlePlayerWindowChanged(StringHash eventType, VariantMap& eventData)
 {
     Graphics* graphics = GetSubsystem<Graphics>();
     using namespace IPCPlayerWindowChanged;
@@ -249,7 +271,18 @@ void PlayerMode::HandleExitRequest(StringHash eventType, VariantMap& eventData)
     data[P_WIDTH] = graphics->GetWidth();
     data[P_HEIGHT] = graphics->GetHeight();
     data[P_MONITOR] = graphics->GetCurrentMonitor();
+    data[P_MAXIMIZED] = graphics->GetMaximized();
     ipc_->SendEventToBroker(E_IPCPLAYERWINDOWCHANGED, data);
+}
+
+void PlayerMode::HandleUpdatesPausedResumed(StringHash eventType, VariantMap& eventData)
+{
+    ipc_->SendEventToBroker(E_IPCPLAYERUPDATESPAUSEDRESUMED, eventData);
+}
+
+void PlayerMode::HandleExitRequest(StringHash eventType, VariantMap& eventData)
+{
+    UnsubscribeFromEvent(E_LOGMESSAGE);
     SendEvent(E_PLAYERQUIT);
 }
 

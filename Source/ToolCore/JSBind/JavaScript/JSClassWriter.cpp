@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/FileSystem.h>
@@ -32,7 +47,7 @@ void JSClassWriter::WriteFunctions(String& source)
     {
         JSBFunction* function = klass_->functions_.At(i);
 
-        if (function->Skip())
+        if (function->Skip(BINDINGLANGUAGE_JAVASCRIPT) || OmitFunction(function))
             continue;
 
         if (function->IsDestructor())
@@ -70,13 +85,17 @@ void JSClassWriter::GenerateSource(String& sourceOut)
 
 void JSClassWriter::GenerateStaticFunctionsSource(String& source, String& packageName)
 {
+    // Store function on both the constructor and prototype
+    // so can access static functions from both the class constructor and an instance
+
     source.AppendWithFormat("js_class_get_constructor(ctx, \"%s\", \"%s\");\n", packageName.CString(), klass_->GetName().CString());
+    source.AppendWithFormat("js_class_get_prototype(ctx, \"%s\", \"%s\");\n", packageName.CString(), klass_->GetName().CString());
 
     for (unsigned i = 0; i < klass_->functions_.Size(); i++)
     {
         JSBFunction* function = klass_->functions_.At(i);
 
-        if (function->Skip())
+        if (function->Skip(BINDINGLANGUAGE_JAVASCRIPT) || OmitFunction(function))
             continue;
 
         if (function->IsConstructor() || function->IsDestructor())
@@ -96,9 +115,13 @@ void JSClassWriter::GenerateStaticFunctionsSource(String& source, String& packag
 
         String scriptName = function->GetName();
         scriptName[0] = tolower(scriptName[0]);
-        source.AppendWithFormat("duk_put_prop_string(ctx, -2, \"%s\");\n", scriptName.CString());
+
+        source.Append("duk_dup(ctx, -1);\n");
+        source.AppendWithFormat("duk_put_prop_string(ctx, -3, \"%s\");\n", scriptName.CString());
+        source.AppendWithFormat("duk_put_prop_string(ctx, -3, \"%s\");\n", scriptName.CString());
     }
-    source.Append("duk_pop(ctx);\n");
+
+    source.Append("duk_pop_2(ctx);\n");
 }
 
 void JSClassWriter::GenerateNonStaticFunctionsSource(String& source, String& packageName)
@@ -109,7 +132,7 @@ void JSClassWriter::GenerateNonStaticFunctionsSource(String& source, String& pac
     {
         JSBFunction* function = klass_->functions_.At(i);
 
-        if (function->Skip())
+        if (function->Skip(BINDINGLANGUAGE_JAVASCRIPT) || OmitFunction(function))
             continue;
 
         if (function->IsConstructor() || function->IsDestructor())
@@ -135,5 +158,41 @@ void JSClassWriter::GenerateNonStaticFunctionsSource(String& source, String& pac
     source.Append("duk_pop(ctx);\n");
 }
 
+bool JSClassWriter::OmitFunction(JSBFunction* function)
+{
+
+    if (function->GetSkipLanguage(BINDINGLANGUAGE_JAVASCRIPT))
+        return true;
+
+    const Vector<JSBFunctionType*>& parameters = function->GetParameters();
+
+    if (function->GetReturnType() && function->GetReturnType()->type_->asVectorType())
+    {
+        if (!function->GetReturnType()->isConst_ || function->GetReturnType()->type_->asVectorType()->isPODVector_)
+        {
+            function->SetSkipLanguage(BINDINGLANGUAGE_JAVASCRIPT);
+            return true;
+        }
+    }
+
+    for (unsigned i = 0; i < parameters.Size(); i++)
+    {
+        JSBFunctionType* ptype = parameters[i];
+
+        JSBVectorType* vtype = ptype->type_->asVectorType();
+
+        if (vtype && !vtype->isVariantVector_)
+        {
+            if (!ptype->isConst_ || ptype->type_->asVectorType()->isPODVector_)
+            {
+                function->SetSkipLanguage(BINDINGLANGUAGE_JAVASCRIPT);
+                return true;
+            }
+        }
+    }
+
+    return false;
+
+}
 
 }

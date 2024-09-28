@@ -1,14 +1,30 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
 
 #include <Atomic/Core/Object.h>
 
+#include "JSBindTypes.h"
 #include "JSBHeader.h"
 #include "JSBModule.h"
 
@@ -39,6 +55,8 @@ public:
     void Parse() ;
 
     bool parsed_;
+
+    PODVector<BindingLanguage> associatedBindings_;
 };
 
 class JSBProperty
@@ -58,12 +76,19 @@ public:
     // based on whether the Getter/Setter is all caps
     // GetMyValue -> myValue;
     // GetGUID -> guid
+    // URLEnabled -> urlEnabled
     String GetCasePropertyName()
     {
         if (!name_.Length())
             return name_;
 
         bool allUpper = true;
+
+        // TODO: https://github.com/AtomicGameEngine/AtomicGameEngine/issues/587
+        if (name_ == "URLEnabled")
+        {
+            return "urlEnabled";
+        }
 
         for (unsigned k = 0; k < name_.Length(); k++)
         {
@@ -92,20 +117,25 @@ class JSBClass : public Object
     friend class JSClassWriter;
     friend class CSClassWriter;
 
-    OBJECT(JSBClass)
+    ATOMIC_OBJECT(JSBClass, Object)
 
 public:
 
-    JSBClass(Context* context, JSBModule* module, const String& name, const String& nativeName);
+    JSBClass(Context* context, JSBModule* module, const String& name, const String& nativeName, bool interface);
     virtual ~JSBClass();
 
-    const String& GetName() { return name_; }
+    const String& GetName() const { return name_; }
     const String& GetNativeName() { return nativeName_; }
     JSBClass* GetBaseClass();
     PODVector<JSBClass*>& GetBaseClasses() {return baseClasses_; }
     PODVector<JSBFunction*>& GetFunctions() { return functions_; }
 
-    bool IsAbstract() { return isAbstract_; }
+    // Get all functions, including those in base classes
+    void GetAllFunctions(PODVector<JSBFunction*>& functions);
+
+    bool IsGeneric() const { return isGeneric_; }
+    bool IsAbstract() const { return isAbstract_; }
+    bool IsInterface() const { return isInterface_; }
 
     /// Note that if we at some point want to generate bindings for JSBClass
     /// this override will need to be addressed, as we'll need to know that JSBClass is
@@ -128,16 +158,21 @@ public:
     JSBHeader* GetHeader() { return header_; }
     JSBModule* GetModule() { return module_; }
     JSBPackage* GetPackage() { return module_->GetPackage(); }
+    const String& GetDocString() const { return docString_; }
 
     bool IsNumberArray() { return numberArrayElements_ != 0; }
     int  GetNumberArrayElements() { return numberArrayElements_;}
     const String& GetArrayElementType() const { return arrayElementType_; }
 
-    JSBFunction* GetConstructor();
+    JSBFunction* GetConstructor(BindingLanguage bindingLanguage = BINDINGLANGUAGE_ANY );
+
+    const PODVector<JSBClass*>& GetInterfaces() const { return interfaces_; }
 
     void SetAbstract(bool value = true) { isAbstract_ = value; }
     void SetObject(bool value = true) { isObject_ = value; }
+    void SetGeneric(bool value = true) { isGeneric_ = value; }
     void SetHeader(JSBHeader* header) { header_ = header; }
+    void SetDocString(const String& value) { docString_ = value; }
     void SetBaseClass(JSBClass* baseClass);
 
     void SetSkipFunction(const String& name, bool skip = true);
@@ -145,6 +180,8 @@ public:
     void AddFunctionOverride(JSBFunctionSignature* override) { overrides_.Push(override); }
     void AddFunctionExclude(JSBFunctionSignature* exclude) { excludes_.Push(exclude); }
     void AddPropertyFunction(JSBFunction* function);
+
+    void AddInterface(JSBClass* klass) { interfaces_.Push(klass); }
 
     void AddTypeScriptDecl(const String& decl) { typeScriptDecls_.Push(decl); }
     unsigned GetNumTypeScriptDecl() { return typeScriptDecls_.Size(); }
@@ -154,6 +191,12 @@ public:
     unsigned GetNumHaxeDecl() { return haxeDecls_.Size(); }
     const String& GetHaxeDecl(unsigned idx) { return haxeDecls_[idx]; }
 
+    /// CSharp bindings can add NET interfaces to native classes, for example IDisposable, IEquatable, etc
+    void AddCSharpInterface(const String& interface) { csharpInterfacesDecls_.Push(interface); }
+
+    /// Gets the C# interfaces implemented by this class
+    const StringVector& GetCSharpInterfaces() const { return csharpInterfacesDecls_; }
+
     void Preprocess();
     void Process();
     void PostProcess();
@@ -162,6 +205,7 @@ public:
 
 private:
 
+    void MergeInterface(JSBClass* interface);
     void RecursiveAddBaseClass(PODVector<JSBClass *> &baseClasses);
 
     String name_;
@@ -172,15 +216,21 @@ private:
 
     PODVector<JSBFunction*> functions_;
     PODVector<JSBClass*> baseClasses_;
+    PODVector<JSBClass*> interfaces_;
 
     PODVector<JSBFunctionSignature*> overrides_;
     PODVector<JSBFunctionSignature*> excludes_;
 
     Vector<String> typeScriptDecls_;
     Vector<String> haxeDecls_;
+    Vector<String> csharpInterfacesDecls_;
 
     bool isAbstract_;
     bool isObject_;
+    bool isGeneric_;
+    bool isInterface_;
+
+    String docString_;
 
     // Vector3, Color, etc are marshalled via arrays
     int numberArrayElements_;

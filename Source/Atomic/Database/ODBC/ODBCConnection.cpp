@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,9 +25,15 @@
 #include "../../Database/DatabaseEvents.h"
 #include "../../IO/Log.h"
 
+#ifdef _WIN32
+// Needs to be included above sql.h for windows
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include <sqlext.h>
 
-namespace Urho3D
+namespace Atomic
 {
 
 DbConnection::DbConnection(Context* context, const String& connectionString) :
@@ -152,7 +158,7 @@ DbResult DbConnection::Execute(const String& sql, bool useCursorEvent)
 void DbConnection::HandleRuntimeError(const char* message, const char* cause)
 {
     StringVector tokens = (String(cause) + "::").Split(':');      // Added "::" as sentinels against unexpected cause format
-    LOGERRORF("%s: nanodbc:%s:%s", message, tokens[1].CString(), tokens[2].CString());
+    ATOMIC_LOGERRORF("%s: nanodbc:%s:%s", message, tokens[1].CString(), tokens[2].CString());
 }
 
 }

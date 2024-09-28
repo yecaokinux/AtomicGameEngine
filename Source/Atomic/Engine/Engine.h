@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,10 +31,10 @@ namespace Atomic
 class Console;
 class DebugHud;
 
-/// Atomic engine. Creates the other subsystems.
+/// Urho3D engine. Creates the other subsystems.
 class ATOMIC_API Engine : public Object
 {
-    OBJECT(Engine);
+    ATOMIC_OBJECT(Engine, Object);
 
 public:
     /// Construct.
@@ -44,6 +44,8 @@ public:
 
     /// Initialize engine using parameters given and show the application window. Return true if successful.
     bool Initialize(const VariantMap& parameters);
+    /// Reinitialize resource cache subsystem using parameters given. Implicitly called by Initialize. Return true if successful.
+    bool InitializeResourceCache(const VariantMap& parameters, bool removeOld = true);
     /// Run one frame.
     void RunFrame();
     /// Create the console and return it. May return null if engine configuration does not allow creation (headless mode.)
@@ -64,10 +66,8 @@ public:
     void SetAutoExit(bool enable);
     /// Override timestep of the next frame. Should be called in between RunFrame() calls.
     void SetNextTimeStep(float seconds);
-    /// Close the graphics window and set the exit flag. No-op on iOS, as an iOS application can not legally exit.
+    /// Close the graphics window and set the exit flag. No-op on iOS/tvOS, as an iOS/tvOS application can not legally exit.
     void Exit();
-    /// Dump profiling information to the log.
-    void DumpProfiler();
     /// Dump information of all resources to the log.
     void DumpResources(bool dumpFileName = false);
     /// Dump information of all memory allocations to the log. Supported in MSVC debug mode only.
@@ -118,9 +118,34 @@ public:
     static const Variant
         & GetParameter(const VariantMap& parameters, const String& parameter, const Variant& defaultValue = Variant::EMPTY);
 
+
+    // ATOMIC BEGIN
+    /// Set whether the engine is paused.
+    void SetPaused(bool paused);
+    /// Set whether to run the next frame even if paused (for stepping frame by frame)
+    void SetRunNextPausedFrame(bool run);
+     /// Return whether the engine is paused.
+    bool IsPaused() const { return paused_; }
+    /// Return whether to run the next frame even if paused (for stepping frame by frame)
+    bool GetRunNextPausedFrame() const { return runNextPausedFrame_; }
+
+    /// Return the engine's current framerate (updated at 1/2 second intervals)
+    unsigned GetFps() const { return fps_; }
+    
+    bool GetDebugBuild() const;
+
+    // ATOMIC END
+
 private:
     /// Handle exit requested event. Auto-exit if enabled.
     void HandleExitRequested(StringHash eventType, VariantMap& eventData);
+    // ATOMIC BEGIN
+    /// Handle Pause or Resume requested event.
+    void HandlePauseResumeRequested(StringHash eventType, VariantMap& eventData);
+    /// Handle Single Step requested event.
+    void HandlePauseStepRequested(StringHash eventType, VariantMap& eventData);
+    // ATOMIC END
+
     /// Actually perform the exit actions.
     void DoExit();
 
@@ -154,6 +179,22 @@ private:
     bool headless_;
     /// Audio paused flag.
     bool audioPaused_;
+    
+    // ATOMIC BEGIN
+    /// Engine paused flag
+    bool paused_;
+    /// Whether to run the next frame even if paused (for stepping frame by frame)
+    bool runNextPausedFrame_;
+
+    /// Time since last fps display update
+    float fpsTimeSinceUpdate_;
+    /// Frames since last fps display update
+    float fpsFramesSinceUpdate_;
+    /// Calculated fps
+    unsigned fps_;
+
+    // ATOMIC END
+   
 };
 
 }

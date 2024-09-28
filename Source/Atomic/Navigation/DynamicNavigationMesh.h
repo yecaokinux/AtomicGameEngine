@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -40,7 +40,7 @@ class Obstacle;
 
 class ATOMIC_API DynamicNavigationMesh : public NavigationMesh
 {
-    OBJECT(DynamicNavigationMesh)
+    ATOMIC_OBJECT(DynamicNavigationMesh, NavigationMesh)
 
     friend class Obstacle;
     friend struct MeshProcess;
@@ -54,10 +54,24 @@ public:
     /// Register with engine context.
     static void RegisterObject(Context*);
 
+    /// Allocate the navigation mesh without building any tiles. Bounding box is not padded. Return true if successful.
+    virtual bool Allocate(const BoundingBox& boundingBox, unsigned maxTiles);
     /// Build/rebuild the entire navigation mesh.
     virtual bool Build();
     /// Build/rebuild a portion of the navigation mesh.
     virtual bool Build(const BoundingBox& boundingBox);
+    /// Rebuild part of the navigation mesh in the rectangular area. Return true if successful.
+    virtual bool Build(const IntVector2& from, const IntVector2& to);
+    /// Return tile data.
+    virtual PODVector<unsigned char> GetTileData(const IntVector2& tile) const;
+    /// Return whether the Obstacle is touching the given tile.
+    bool IsObstacleInTile(Obstacle* obstacle, const IntVector2& tile) const;
+    /// Add tile to navigation mesh.
+    virtual bool AddTile(const PODVector<unsigned char>& tileData);
+    /// Remove tile from navigation mesh.
+    virtual void RemoveTile(const IntVector2& tile);
+    /// Remove all tiles from navigation mesh.
+    virtual void RemoveAllTiles();
     /// Visualize the component as debug geometry.
     virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
     /// Add debug geometry to the debug renderer.
@@ -70,9 +84,13 @@ public:
 
     /// Set the maximum number of obstacles allowed.
     void SetMaxObstacles(unsigned maxObstacles) { maxObstacles_ = maxObstacles; }
+    /// Set the maximum number of layers that navigation construction can create.
+    void SetMaxLayers(unsigned maxLayers);
 
     /// Return the maximum number of obstacles allowed.
     unsigned GetMaxObstacles() const { return maxObstacles_; }
+    /// Return the maximum number of layers permitted to build.
+    unsigned GetMaxLayers() const { return maxLayers_; }
 
     /// Draw debug geometry for Obstacles.
     void SetDrawObstacles(bool enable) { drawObstacles_ = enable; }
@@ -96,28 +114,38 @@ protected:
     void RemoveObstacle(Obstacle*, bool silent = false);
 
     /// Build one tile of the navigation mesh. Return true if successful.
-    int BuildTile(Vector<NavigationGeometryInfo>& geometryList, int x, int z, TileCacheData*);
+    int BuildTile(Vector<NavigationGeometryInfo>& geometryList, int x, int z, TileCacheData* tiles);
+    /// Build tiles in the rectangular area. Return number of built tiles.
+    unsigned BuildTiles(Vector<NavigationGeometryInfo>& geometryList, const IntVector2& from, const IntVector2& to);
     /// Off-mesh connections to be rebuilt in the mesh processor.
     PODVector<OffMeshConnection*> CollectOffMeshConnections(const BoundingBox& bounds);
     /// Release the navigation mesh, query, and tile cache.
     virtual void ReleaseNavigationMesh();
 
 private:
+    /// Write tiles data.
+    void WriteTiles(Serializer& dest, int x, int z) const;
+    /// Read tiles data to the navigation mesh.
+    bool ReadTiles(Deserializer& source, bool silent);
     /// Free the tile cache.
     void ReleaseTileCache();
 
     /// Detour tile cache instance that works with the nav mesh.
     dtTileCache* tileCache_;
     /// Used by dtTileCache to allocate blocks of memory.
-    dtTileCacheAlloc* allocator_;
+    UniquePtr<dtTileCacheAlloc> allocator_;
     /// Used by dtTileCache to compress the original tiles to use when reconstructing for changes.
-    dtTileCacheCompressor* compressor_;
-    /// Mesh processer used by Detour, in this case a 'pass-through' processor.
-    dtTileCacheMeshProcess* meshProcessor_;
+    UniquePtr<dtTileCacheCompressor> compressor_;
+    /// Mesh processor used by Detour, in this case a 'pass-through' processor.
+    UniquePtr<dtTileCacheMeshProcess> meshProcessor_;
     /// Maximum number of obstacle objects allowed.
     unsigned maxObstacles_;
+    /// Maximum number of layers that are allowed to be constructed.
+    unsigned maxLayers_;
     /// Debug draw Obstacles.
     bool drawObstacles_;
+    /// Queue of tiles to be built.
+    PODVector<IntVector2> tileQueue_;
 };
 
 }

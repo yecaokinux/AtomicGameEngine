@@ -28,9 +28,9 @@ namespace Atomic
 {
 
 
-class UIInlineSelect : public UIWidget
+class ATOMIC_API UIInlineSelect : public UIWidget
 {
-    OBJECT(UIInlineSelect)
+    ATOMIC_OBJECT(UIInlineSelect, UIWidget)
 
 public:
 
@@ -38,6 +38,10 @@ public:
     virtual ~UIInlineSelect();
 
     void SetLimits(double minimum, double maximum);
+
+	/// set and get the inc, dec step size
+    void SetStepSize(double step);
+    double GetStepSize();
 
     void SetEditFieldLayoutParams(UILayoutParams* params);
 

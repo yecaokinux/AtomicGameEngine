@@ -25,6 +25,8 @@ TODO:
 #ifndef BT_SLIDER_CONSTRAINT_H
 #define BT_SLIDER_CONSTRAINT_H
 
+#include "LinearMath/btScalar.h"//for BT_USE_DOUBLE_PRECISION
+
 #ifdef BT_USE_DOUBLE_PRECISION
 #define btSliderConstraintData2		btSliderConstraintDoubleData
 #define btSliderConstraintDataName  "btSliderConstraintDoubleData"
@@ -33,7 +35,7 @@ TODO:
 #define btSliderConstraintDataName	"btSliderConstraintData"
 #endif //BT_USE_DOUBLE_PRECISION
 
-#include "../../LinearMath/btVector3.h"
+#include "LinearMath/btVector3.h"
 #include "btJacobianEntry.h"
 #include "btTypedConstraint.h"
 
@@ -280,6 +282,11 @@ public:
 	virtual	void	setParam(int num, btScalar value, int axis = -1);
 	///return the local value of parameter
 	virtual	btScalar getParam(int num, int axis = -1) const;
+	
+	virtual	int getFlags() const
+    	{
+		return m_flags;
+	}
 
 	virtual	int	calculateSerializeBufferSize() const;
 

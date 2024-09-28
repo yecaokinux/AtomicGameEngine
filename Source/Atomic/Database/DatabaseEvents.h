@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,20 +25,20 @@
 #include "../Core/Object.h"
 #include "../Database/DbConnection.h"
 
-namespace Urho3D
+namespace Atomic
 {
 
 /// %Database cursor. Event handler could set P_FILTER to true to filter out a row from resultset and P_ABORT to true to stop further cursor events.
-EVENT(E_DBCURSOR, DbCursor)
+ATOMIC_EVENT(E_DBCURSOR, DbCursor)
 {
-    PARAM(P_DBCONNECTION, DbConnection);    // DbConnection pointer
-    PARAM(P_RESULTIMPL, ResultImpl);        // Underlying result object pointer (cannot be used in scripting)
-    PARAM(P_SQL, SQL);                      // String
-    PARAM(P_NUMCOLS, NumCols);              // unsigned
-    PARAM(P_COLVALUES, ColValues);          // VariantVector
-    PARAM(P_COLHEADERS, ColHeaders);        // StringVector
-    PARAM(P_FILTER, Filter);                // bool [in]
-    PARAM(P_ABORT, Abort);                  // bool [in]
+    ATOMIC_PARAM(P_DBCONNECTION, DbConnection);    // DbConnection pointer
+    ATOMIC_PARAM(P_RESULTIMPL, ResultImpl);        // Underlying result object pointer (cannot be used in scripting)
+    ATOMIC_PARAM(P_SQL, SQL);                      // String
+    ATOMIC_PARAM(P_NUMCOLS, NumCols);              // unsigned
+    ATOMIC_PARAM(P_COLVALUES, ColValues);          // VariantVector
+    ATOMIC_PARAM(P_COLHEADERS, ColHeaders);        // StringVector
+    ATOMIC_PARAM(P_FILTER, Filter);                // bool [in]
+    ATOMIC_PARAM(P_ABORT, Abort);                  // bool [in]
 }
 
 }

@@ -727,6 +727,7 @@ private:
                 if (chain[i].IsIdentity() && (anim_chain_bitmask & bit) == 0) {
 
                     // ATOMIC BEGIN
+
                     // Only optimize these out if not a TRS
                     // As these may be animated in an external FBX
                     // and should not be dropped
@@ -736,7 +737,9 @@ private:
                     {
                         continue;
                     }
+
                     // ATOMIC END
+
                 }
 
                 aiNode* nd = new aiNode();

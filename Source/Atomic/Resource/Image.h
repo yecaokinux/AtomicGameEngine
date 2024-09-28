@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -53,6 +53,7 @@ struct CompressedLevel
     /// Construct empty.
     CompressedLevel() :
         data_(0),
+        format_(CF_NONE),
         width_(0),
         height_(0),
         depth_(0),
@@ -89,7 +90,7 @@ struct CompressedLevel
 /// %Image resource.
 class ATOMIC_API Image : public Resource
 {
-    OBJECT(Image);
+    ATOMIC_OBJECT(Image, Resource);
 
 public:
     /// Construct empty.
@@ -103,6 +104,8 @@ public:
     virtual bool BeginLoad(Deserializer& source);
     /// Save the image to a stream. Regardless of original format, the image is saved as png. Compressed image data is not supported. Return true if successful.
     virtual bool Save(Serializer& dest) const;
+    /// Save the image to a file. Format of the image is determined by file extension. JPG is saved with maximum quality.
+    virtual bool SaveFile(const String& fileName) const;
 
     /// Set 2D size and number of color components. Old image data will be destroyed and new data is undefined. Return true if successful.
     bool SetSize(int width, int height, unsigned components);
@@ -136,8 +139,12 @@ public:
     bool SavePNG(const String& fileName) const;
     /// Save in TGA format. Return true if successful.
     bool SaveTGA(const String& fileName) const;
-    /// Save in JPG format with compression quality. Return true if successful.
+    /// Save in JPG format with specified quality. Return true if successful.
     bool SaveJPG(const String& fileName, int quality) const;
+    /// Save in DDS format. Only uncompressed RGBA images are supported. Return true if successful.
+    bool SaveDDS(const String& fileName) const;
+    /// Save in WebP format with minimum (fastest) or specified compression. Return true if successful. Fails always if WebP support is not compiled in.
+    bool SaveWEBP(const String& fileName, float compression = 0.0f) const;
     /// Whether this texture is detected as a cubemap, only relevant for DDS.
     bool IsCubemap() const { return cubemap_; }
     /// Whether this texture has been detected as a volume, only relevant for DDS.
@@ -179,10 +186,10 @@ public:
     /// Return compressed format.
     CompressedFormat GetCompressedFormat() const { return compressedFormat_; }
 
-    /// Return number of compressed mip levels.
+    /// Return number of compressed mip levels. Returns 0 if the image is has not been loaded from a source file containing multiple mip levels.
     unsigned GetNumCompressedLevels() const { return numCompressedLevels_; }
 
-    /// Return next mip level by bilinear filtering.
+    /// Return next mip level by bilinear filtering. Note that if the image is already 1x1x1, will keep returning an image of that size.
     SharedPtr<Image> GetNextLevel() const;
     /// Return the next sibling image of an array or cubemap.
     SharedPtr<Image> GetNextSibling() const { return nextSibling_;  }
@@ -196,6 +203,19 @@ public:
     SDL_Surface* GetSDLSurface(const IntRect& rect = IntRect::ZERO) const;
     /// Precalculate the mip levels. Used by asynchronous texture loading.
     void PrecalculateLevels();
+
+    // ATOMIC BEGIN
+    /// Whether this texture has an alpha channel
+    bool HasAlphaChannel() const;
+    /// Copy contents of the image into the defined rect, scaling if necessary. This image should already be large enough to include the rect. Compressed and 3D images are not supported.
+    bool SetSubimage(const Image* image, const IntRect& rect);
+    // ATOMIC END
+    /// Clean up the mip levels.
+    void CleanupLevels();
+    /// Get all stored mip levels starting from this.
+    void GetLevels(PODVector<Image*>& levels);
+    /// Get all stored mip levels starting from this.
+    void GetLevels(PODVector<const Image*>& levels) const;
 
 private:
     /// Decode an image using stb_image.

@@ -27,9 +27,9 @@
 namespace Atomic
 {
 
-class UITextField : public UIWidget
+class ATOMIC_API UITextField : public UIWidget
 {
-    OBJECT(UITextField)
+    ATOMIC_OBJECT(UITextField, UIWidget)
 
 public:
 

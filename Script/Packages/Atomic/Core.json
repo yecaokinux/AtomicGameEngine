@@ -1,13 +1,37 @@
 {
 	"name" : "Core",
-	"sources" : ["Source/Atomic/Core"],
-	"classes" : ["Context", "Object"],
+	"sources" : ["Source/Atomic/Core", "Source/Atomic/BuildInfo"],
+	"includes": [
+		"<Atomic/Engine/Engine.h>",
+		"<Atomic/Network/Network.h>",
+		"<Atomic/Web/Web.h>",
+		"<Atomic/Input/Input.h>",
+		"<Atomic/Audio/Audio.h>",
+		"<Atomic/UI/UI.h>",
+		"<Atomic/Graphics/Graphics.h>",
+		"<Atomic/Graphics/Renderer.h>",
+		"<Atomic/Metrics/Metrics.h>"
+	],
+	"classes" : ["Context", "Object", "AtomicBuildInfo", "Time", "Profiler"],
 	"classes_rename" : {
 		"Object" : "AObject"
 	},
 	"excludes" : {
 		"Object" : {
 			"SendEvent" : ["StringHash"]
+		},
+		"Context" : {
+			"GetTypeName" : ["StringHash"],
+			"RequireIK" : [],
+			"ReleaseIK" : []
+		},
+		"CSharp" : {
+			"Object" : {
+				"UnsubscribeFromAllEvents" : []
+			},
+			"Profiler": {
+				"EndBlock" : []
+			}
 		}
 	},
 	"overloads" : {
@@ -19,8 +43,14 @@
 
 		"Object" : [
 			"sendEvent(eventType:string, data?:Object);",
-			"subscribeToEvent(eventType:string, callback:(data:any)=>void);",
-			"subscribeToEvent(sender:AObject, eventType:string, callback:(data:any)=>void);"
+			"sendEvent<T extends Atomic.EventCallbackMetaData>(eventCallbackMetaData:T);",
+			"subscribeToEvent(eventType:string, callback:(data:any) => void);",
+			"subscribeToEvent(sender:AObject, eventType:string, callback:(data: any) => void);",
+			"subscribeToEvent(eventMetaData:Atomic.EventMetaData);",
+			"subscribeToEvent(sender:AObject, eventMetaData:Atomic.EventMetaData);"
+		],
+		"Profiler" : [
+			"beginBlock(name:string, filename:string, line:number, argb?:number, status?:Atomic.ProfilerBlockStatus );"
 		]
 	},
 	"haxe_decl" : {

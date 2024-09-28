@@ -41,6 +41,9 @@ class ListViewItemWidget;
 
 class ListViewItemWidget : public TBLayout
 {
+    // For safe typecasting
+    TBOBJECT_SUBCLASS(ListViewItemWidget, TBLayout)
+
 public:
     ListViewItemWidget(ListViewItem *item, ListViewItemSource *source, TBSelectItemViewer *sourceviewer, int index);
     virtual bool OnEvent(const TBWidgetEvent &ev);
@@ -252,8 +255,7 @@ ListViewItemWidget::ListViewItemWidget(ListViewItem *item, ListViewItemSource *s
     SetLayoutDistribution(LAYOUT_DISTRIBUTION_GRAVITY);
     SetLayoutDistributionPosition(LAYOUT_DISTRIBUTION_POSITION_LEFT_TOP);
     SetPaintOverflowFadeout(false);
-    SetCapturing(false);
-
+    
     item_->widget_ = this;
 
     for (int i = 0; i < item->depth_; i++)
@@ -342,6 +344,18 @@ bool ListViewItemWidget::OnEvent(const TBWidgetEvent &ev)
     {
         item_->SetExpanded(!item_->GetExpanded());
 
+        // If we're expanding, and CTRL is help down, expand all children
+        if (item_->GetExpanded() && ev.modifierkeys & TB_CTRL)
+        {
+            PODVector<ListViewItem*> children;
+            item_->GetChildren(children, true);
+
+            for (unsigned i = 0; i < children.Size(); i++)
+            {
+                children[i]->SetExpanded(true);
+            }
+        }
+
         source_->uiListView_->UpdateItemVisibility();
 
         // want to bubble
@@ -401,7 +415,7 @@ static int select_list_sort_cb(TBSelectItemSource *_source, const int *a, const 
 
 UIListView::UIListView(Context* context, bool createWidget) :
     UIWidget(context, createWidget),
-    source_(0), itemLookupId_(0), multiSelect_(false), moveDelta_(0.0f)
+    source_(0), itemLookupId_(0), multiSelect_(false), moveDelta_(0.0f), pivot_(nullptr), pivotIndex_(0), startNewSelection_(true)
 {
     rootList_ = new UISelectList(context);
     rootList_->SetUIListView(true);
@@ -853,6 +867,12 @@ void UIListView::SendItemSelectedChanged(ListViewItem* item)
 
 }
 
+void UIListView::SelectItem(ListViewItem* item, bool select)
+{
+    item->SetSelected(select);
+    SendItemSelectedChanged(item);
+}
+
 bool UIListView::OnEvent(const tb::TBWidgetEvent &ev)
 {
     if (ev.type == EVENT_TYPE_KEY_UP )
@@ -884,33 +904,75 @@ bool UIListView::OnEvent(const tb::TBWidgetEvent &ev)
             if (item->id == ev.target->GetID())
             {
                 bool multi = false;
-                if (multiSelect_ && (ev.modifierkeys & TB_SHIFT || ev.modifierkeys & TB_CTRL || ev.modifierkeys & TB_SUPER))
+                if (multiSelect_ && (ev.modifierkeys & TB_CTRL || ev.modifierkeys & TB_SUPER))
                     multi = true;
 
-                if (multi)
+                bool shiftMulti = false;
+                if (multiSelect_ && (ev.modifierkeys & TB_SHIFT))
+                    shiftMulti = true;
+
+                if (shiftMulti)
                 {
-                    if (item->GetSelected())
+                    if (startNewSelection_)
+                        SelectAllItems(false);
+
+                    if (!pivot_)
                     {
-                        item->SetSelected(false);
-                        UpdateItemVisibility();
-
-                        SendItemSelectedChanged(item);
-                    }
-                    else
-                    {
-
-                        item->SetSelected(true);
-                        UpdateItemVisibility();
-
-                        SendItemSelectedChanged(item);
+                        pivotIndex_ = 0;
+                        pivot_ = source_->GetItem(pivotIndex_);
                     }
 
                     SetValueFirstSelected();
 
+                    if (i > pivotIndex_)
+                    {
+                        for (int j = pivotIndex_; j < i; j++)
+                        {
+                            ListViewItem* itemSelect = source_->GetItem(j);
+
+                            if (!itemSelect->parent_ || itemSelect->parent_->GetExpanded())
+                                SelectItem(itemSelect, true);
+                        }
+                    }
+                    else if (i < pivotIndex_)
+                    {
+                        for (int j = pivotIndex_; j > i; j--)
+                        {
+                            ListViewItem* itemSelect = source_->GetItem(j);
+
+                            if (itemSelect->parent_->GetExpanded())
+                                SelectItem(itemSelect, true);
+                        }
+                    }
+
+                    SelectItem(item, true);
+                    UpdateItemVisibility();
+                }
+                else if (multi)
+                {
+                    if (item->GetSelected())
+                    {
+                        SelectItem(item, false);
+                    }
+                    else
+                    {
+                        SelectItem(item, true);
+                    }
+
+                    SetValueFirstSelected();
+                    UpdateItemVisibility();
+
+                    pivot_ = item;
+                    pivotIndex_ = i;
+                    startNewSelection_ = false;
                 }
                 else
                 {
                     SelectSingleItem(item, false);
+
+                    pivot_ = item;
+                    pivotIndex_ = i;
+                    startNewSelection_ = true;
                 }
 
                 return true;

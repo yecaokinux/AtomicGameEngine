@@ -17,7 +17,7 @@ subject to the following restrictions:
 #define BT_CONE_MINKOWSKI_H
 
 #include "btConvexInternalShape.h"
-#include "../../BulletCollision/BroadphaseCollision/btBroadphaseProxy.h" // for the types
+#include "BulletCollision/BroadphaseCollision/btBroadphaseProxy.h" // for the types
 
 ///The btConeShape implements a cone shape primitive, centered around the origin and aligned with the Y axis. The btConeShapeX is aligned around the X axis and btConeShapeZ around the Z axis.
 ATTRIBUTE_ALIGNED16(class) btConeShape : public btConvexInternalShape
@@ -42,6 +42,15 @@ public:
 
 	btScalar getRadius() const { return m_radius;}
 	btScalar getHeight() const { return m_height;}
+
+	void setRadius(const btScalar radius)
+	{
+		m_radius = radius;
+	}
+	void setHeight(const btScalar height)
+	{
+		m_height = height;
+	}
 
 
 	virtual void	calculateLocalInertia(btScalar mass,btVector3& inertia) const

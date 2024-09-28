@@ -41,9 +41,9 @@ struct QueuedEvent
     VariantMap eventData_;
 };
 
-class IPC : public Object
+class ATOMIC_API IPC : public Object
 {
-    OBJECT(IPC);
+    ATOMIC_OBJECT(IPC, Object);
 
 public:
 
@@ -51,6 +51,9 @@ public:
     IPC(Context* context);
     /// Destruct.
     virtual ~IPC();
+
+    // Shutdown IPC subsystem, requests any brokers to exit
+    void Shutdown();
 
     // queues an event from a worker or broker receiving thread
     void QueueEvent(unsigned id, StringHash eventType, VariantMap& eventData);
@@ -65,13 +68,20 @@ public:
     void SendEventToBroker(StringHash eventType);
     void SendEventToBroker(StringHash eventType, VariantMap& eventData);
 
+    // Processes arg strings looking for ipc server/client handles, returns true if an IPC subprocess
+    static bool ProcessArguments(const Vector<String>& arguments, int& id, IPCHandle& fd1, IPCHandle& fd2);
+
+#ifdef ATOMIC_PLATFORM_WINDOWS
+    IPCHandle GetJobHandle() const { return jobHandle_; }
+#endif
+
 private:
 
     // if non-zero we're a worked and this is out broker's channel id
     unsigned workerChannelID_;
 
     // processes queued events
-    void HandleUpdate(StringHash eventType, VariantMap& eventData);
+    void HandleBeginFrame(StringHash eventType, VariantMap& eventData);
 
     mutable Mutex eventMutex_;
 
@@ -81,6 +91,10 @@ private:
 
     // valid on child
     SharedPtr<IPCWorker> worker_;
+
+#ifdef ATOMIC_PLATFORM_WINDOWS
+    IPCHandle jobHandle_;
+#endif
 
 };
 

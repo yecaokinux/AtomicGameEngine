@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/IO/FileSystem.h>
@@ -17,86 +32,45 @@
 #include "CSTypeHelper.h"
 #include "CSFunctionWriter.h"
 
-/*
- *
- C# getters/setters
- local instance storage so we're not constantly creating managed Vector3, etc
- Vector2/Vector3/BoundingBox, etc C# structs so assign by value
- Object lifetime
-
- C# enum of module types for type info?
- C# version of push class instance?
-
- new instance from C# needs constructor
- wrapping does not, wrapping doesn't use constructors at all (JS needs this for prototype)
-
- Store GCHandle to keep an object alive (Component, UI) C# side?
-
- typedef const void* ClassID;
- which changed based on address, so need register at startup
- so at package startup time, need to setup mapping between
- IntPtr and C# class, we also need to be able to new a class
- instance with existing native or create a native when new'ing from C#
-
- IntPtr to RefCounted native side is the "ID", like JSHeapPtr
-
- Lifetime:
-
- // you cannot derive from native engine classes, other than script components
-
- a C# instance can be new'd, handed to native, stored in native, the C# side could be GC'd
- future access to this instance would be a new instance
-
-*/
-
-
-/*
-
-// struct marshal Vector2, Vector3, BoundingBox, etc
-// RefCounted*
-// primitive bool, int, uint, float, double
-// String
-
-RefCounted* csb_Node_Constructor()
-{
-    return new Node(NETCore::GetContext());
-}
-
-void csb_Node_GetPosition(Node* self, Vector3* out)
-{
-    *out = self->GetPosition();
-}
-
-void csb_Node_SetPosition(Node* self, Vector3*__arg0)
-{
-    self->SetPosition(*__arg0);
-}
-
-void csb_Node_SetPosition(Node* self, Vector3*__arg0)
-{
-    self->SetPosition(*__arg0);
-}
-
-bool csb_Audio_Play(Audio* self)
-{
-    bool retValue = self->Play();
-    return retValue;
-}
-
-const RefCounted* csb_Node_GetParent(Node* self)
-{
-    const RefCounted* retValue = self->GetParent();
-    return RefCounted;
-}
-
-RefCounted* csb_ObjectAnimation_Constructor()
-{
-    return new ObjectAnimation(NETCore::GetContext());
-}
-
-*/
 namespace ToolCore
 {
+
+bool CSFunctionWriter::wroteConstructor_ = false;
+
+static bool _CheckNumber(const String& value)
+{
+    // check number initializer
+    unsigned i;
+    bool sawDot = false;
+    for (i = 0; i < value.Length(); i++)
+    {
+        char c = value[i];
+
+        if (c == '-' && i)
+        {
+            break;
+        }
+        else if (c == 'f')
+        {
+            if (i != value.Length() - 1)
+                break;
+        }
+        else if (c == '.')
+        {
+            if (sawDot)
+                break;
+
+            sawDot = true;
+        }
+        else if (!isdigit(c))
+        {
+            break;
+        }
+    }
+
+    return i == value.Length();
+
+}
 
 CSFunctionWriter::CSFunctionWriter(JSBFunction *function) : JSBFunctionWriter(function)
 {
@@ -117,13 +91,18 @@ void CSFunctionWriter::GenNativeCallParameters(String& sig)
 {
     JSBClass* klass = function_->GetClass();
 
-    Vector<JSBFunctionType*>& parameters = function_->GetParameters();
+    const Vector<JSBFunctionType*>& parameters = function_->GetParameters();
 
     Vector<String> args;
 
-    if (parameters.Size())
+    unsigned numParams = parameters.Size();
+
+    if (function_->HasMutatedReturn())
+        numParams--;
+
+    if (numParams)
     {
-        for (unsigned int i = 0; i < parameters.Size(); i++)
+        for (unsigned int i = 0; i < numParams; i++)
         {
             JSBFunctionType* ptype = parameters.At(i);
 
@@ -137,15 +116,30 @@ void CSFunctionWriter::GenNativeCallParameters(String& sig)
                     continue;
                 }
 
-                if (klass->IsNumberArray())
+                if (klass->IsNumberArray() || ptype->isReference_)
                     args.Push(ToString("*%s", ptype->name_.CString()));
                 else
                     args.Push(ToString("%s", ptype->name_.CString()));
 
             }
+            else if (ptype->type_->asVectorType())
+            {
+                args.Push(ToString("%s__vector", ptype->name_.CString()));
+            }
             else
             {
-                args.Push(ToString("%s", ptype->name_.CString()));
+                if (ptype->type_->asStringType())
+                {
+                    args.Push(ToString("%s ? String(%s) : String::EMPTY", ptype->name_.CString(), ptype->name_.CString()));
+                }
+                else if (ptype->type_->asStringHashType())
+                {
+                    args.Push(ToString("StringHash(%s)", ptype->name_.CString()));
+                }
+                else
+                {
+                    args.Push(ToString("%s", ptype->name_.CString()));
+                }
             }
 
         }
@@ -174,8 +168,86 @@ void CSFunctionWriter::WriteNativeFunction(String& source)
 
     Indent();
 
-
     source += "\n";
+
+    if (function_->HasMutatedReturn())
+    {
+        line = ToString("if (!__retValue) return;\n");
+        source += IndentLine(line);
+        line = ToString("VariantVector __retValueVector;\n");
+        source += IndentLine(line);
+    }
+
+    // vector marshal
+
+    bool hasVectorMarshal = false;
+    const Vector<JSBFunctionType*>& fparams = function_->GetParameters();
+
+    for (unsigned i = 0; i < fparams.Size(); i++)
+    {
+        JSBFunctionType* ftype = fparams[i];
+
+        // skip mutated input param
+        if (function_->HasMutatedReturn() && i == fparams.Size() - 1)
+            break;
+
+        // Interface        
+        JSBClass* interface = 0;
+        if (ftype->type_->asClassType() && ftype->type_->asClassType()->class_->IsInterface())
+        {
+            // We need to downcast to the interface 
+            // TODO: this assumes Object* is in hierarchy, how do we validate this?
+            interface = ftype->type_->asClassType()->class_;
+            line = ToString("%s = dynamic_cast<%s*>((Object*)%s);\n", ftype->name_.CString(), interface->GetNativeName().CString(), ftype->name_.CString());
+            source += IndentLine(line);
+        }
+
+        // Vector
+        JSBVectorType* vtype = ftype->type_->asVectorType();
+
+        if (!vtype)
+            continue;
+
+        JSBClassType* classType = vtype->vectorType_->asClassType();
+
+        if (!classType)
+            continue;
+
+        String className = classType->class_->GetName();
+
+        String vectorMarshal;
+
+        hasVectorMarshal = true;
+
+        if (vtype->isVariantVector_)
+        {
+            const String& pname = ftype->name_;
+
+            // TODO: handle early out with return value
+            if (!function_->returnType_)
+                source += IndentLine(ToString("if (!%s) return;\n", pname.CString()));
+
+            source += IndentLine(ToString("VariantVector %s__vector;\n", pname.CString()));
+            source += IndentLine(ToString("%s->AdaptToVector(%s__vector);\n", pname.CString(), pname.CString()));
+
+        }
+        else if (vtype->isPODVector_)
+        {
+            const String& pname = ftype->name_;
+            source += IndentLine(ToString("PODVector<%s*> %s__vector;\n", className.CString(), pname.CString()));
+            source += IndentLine(ToString("if (%s) %s->AdaptToVector<%s*>(%s__vector);\n", pname.CString(), pname.CString(), className.CString(), pname.CString()));
+        }
+        else
+        {
+            // vectorMarshal = ToString("PODVector<%s*> %s__vector", className.CString(), ftype->name_.CString());
+        }
+
+        if (vectorMarshal.Length())
+        {
+            source += IndentLine(vectorMarshal);
+            vectorMarshal = String::EMPTY;
+        }
+    }
 
     bool returnValue = false;
     bool sharedPtrReturn = false;
@@ -194,21 +266,59 @@ void CSFunctionWriter::WriteNativeFunction(String& source)
     }
     else if (function_->GetReturnClass() && function_->GetReturnType()->isSharedPtr_)
     {
-        returnStatement = ToString("SharedPtr<%s> returnValue = ", function_->GetReturnClass()->GetNativeName().CString());
+        returnStatement = ToString("SharedPtr<%s> returnValuePtr = ", function_->GetReturnClass()->GetNativeName().CString());
         sharedPtrReturn = true;
+    }
+    else if (function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+    {
+        // we have an out parameter
+        JSBVectorType* vtype = function_->GetReturnType()->type_->asVectorType();
+
+        if (!vtype->vectorTypeIsSharedPtr_ && !vtype->vectorTypeIsWeakPtr_)
+        {
+            returnStatement = ToString("%sVector<%s*> returnValue__vector = ", vtype->isPODVector_ ? "POD" : "", vtype->vectorType_->asClassType()->class_->GetName().CString());
+        }
+        else
+        {
+            returnStatement = ToString("%sVector<%s<%s>> returnValue__vector = ",  vtype->isPODVector_ ? "POD" : "", vtype->vectorTypeIsSharedPtr_ ? "SharedPtr" : "WeakPtr", vtype->vectorType_->asClassType()->class_->GetName().CString());
+        }
     }
     else
     {
-        if (returnType != "void")
+        if (returnType != "void" && !hasVectorMarshal)
         {
             returnStatement = "return ";
+        }
+        else if (returnType != "void")
+        {
+            returnStatement = ToString("%s returnValue = ", returnType.CString());
         }
     }
 
     String callSig;
     GenNativeCallParameters(callSig);
     if (!function_->isConstructor_)
-        line = ToString("%sself->%s(%s);\n", returnStatement.CString(), function_->GetName().CString(), callSig.CString());
+    {
+        if (function_->IsStatic())
+        {
+            line = ToString("%s%s::%s(%s);\n", returnStatement.CString(), klass->GetNativeName().CString(), function_->GetName().CString(), callSig.CString());
+        }
+        else
+        {
+            if (function_->hasMutatedReturn_)
+            {
+                // this handles VariantVector case now, can be expanded
+                line = ToString("__retValueVector = self->%s(%s);\n", function_->GetName().CString(), callSig.CString());
+            }
+            else
+            {
+                line = ToString("%sself->%s(%s);\n", returnStatement.CString(), function_->GetName().CString(), callSig.CString());
+            }
+
+
+        }
+
+    }
     else
     {
         if (klass->IsAbstract())
@@ -230,14 +340,84 @@ void CSFunctionWriter::WriteNativeFunction(String& source)
 
     source += IndentLine(line);
 
+    // Vector marshaling
+
+    for (unsigned i = 0; i < fparams.Size(); i++)
+    {
+        JSBFunctionType* ftype = fparams[i];
+
+        JSBVectorType* vtype = ftype->type_->asVectorType();
+
+        if (!vtype)
+            continue;
+
+        if (function_->HasMutatedReturn() && i == fparams.Size() - 1)
+        {
+            source += IndentLine("__retValue->AdaptFromVector(__retValueVector);\n");
+            break;
+        }
+
+        JSBClassType* classType = vtype->vectorType_->asClassType();
+
+        if (!classType)
+            continue;
+
+        String className = classType->class_->GetName();
+
+        String vectorMarshal;
+
+        if (vtype->isPODVector_)
+        {
+            const String& pname = ftype->name_;
+            source += IndentLine(ToString("if (%s) %s->AdaptFromVector<%s*>(%s__vector);\n", pname.CString(), pname.CString(), className.CString(), pname.CString()));
+        }
+        else
+        {
+            // vectorMarshal = ToString("PODVector<%s*> %s__vector", className.CString(), ftype->name_.CString());
+        }
+
+        if (vectorMarshal.Length())
+        {
+            source += IndentLine(vectorMarshal);
+            vectorMarshal = String::EMPTY;
+        }
+    }
+
+
     if (sharedPtrReturn)
     {
-        source += IndentLine("returnValue->AddRef();\n");
+        // We need to keep the shared ptr return value alive through the call, without adding an unwanted reference
+
+        source += IndentLine(ToString("%s* returnValue = returnValuePtr;\n", function_->GetReturnClass()->GetNativeName().CString()));
+        source += IndentLine("if (returnValue)\n");
+        source += IndentLine("{\n");
+
+        Indent();
+
+        source += IndentLine("returnValue->AddRefSilent();\n");
+        source += IndentLine("returnValuePtr = 0;\n");
+        source += IndentLine("returnValue->ReleaseRefSilent();\n");
+
+        Dedent();
+
+        source += IndentLine("}\n");
+
         source += IndentLine("return returnValue;\n");
     }
     else if (returnType == "const char*")
     {
         source += IndentLine("return returnValue.CString();\n");
+    }
+    else if (function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+    {
+        // we have an out parameter
+        JSBVectorType* vtype = function_->GetReturnType()->type_->asVectorType();
+        source += IndentLine("if (returnValue) returnValue->AdaptFromVector(returnValue__vector);\n");
+
+    }
+    else if (returnType != "void" && hasVectorMarshal)
+    {
+        source += IndentLine("return returnValue;\n");
     }
 
     Dedent();
@@ -279,6 +459,12 @@ void CSFunctionWriter::WriteDefaultStructParameters(String& source)
 
 void CSFunctionWriter::WriteManagedPInvokeFunctionSignature(String& source)
 {
+    JSBClass* klass = function_->GetClass();
+    JSBPackage* package = klass->GetPackage();
+
+    if (klass->IsInterface())
+        return;
+
     source += "\n";
 
     // CoreCLR has pinvoke security demand code commented out, so we do not (currently) need this optimization:
@@ -288,10 +474,19 @@ void CSFunctionWriter::WriteManagedPInvokeFunctionSignature(String& source)
 
     String line = "[DllImport (Constants.LIBNAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]\n";
     source += IndentLine(line);
-    JSBClass* klass = function_->GetClass();
-    JSBPackage* package = klass->GetPackage();
 
     String returnType = CSTypeHelper::GetPInvokeTypeString(function_->GetReturnType());
+
+    // handled by out parameter
+    if (function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+        returnType = "void";
+
+    if (returnType == "bool")
+    {
+        // default boolean marshal is 4 byte windows type BOOL and not 1 byte bool
+        // https://blogs.msdn.microsoft.com/jaredpar/2008/10/14/pinvoke-and-bool-or-should-i-say-bool/        
+        source += IndentLine("[return: MarshalAs(UnmanagedType.I1)]\n");
+    }
 
     if (returnType == "string")
         returnType = "IntPtr";
@@ -299,11 +494,11 @@ void CSFunctionWriter::WriteManagedPInvokeFunctionSignature(String& source)
     if (function_->IsConstructor())
         returnType = "IntPtr";
 
-    Vector<JSBFunctionType*>& parameters = function_->GetParameters();
+    const Vector<JSBFunctionType*>& parameters = function_->GetParameters();
 
     Vector<String> args;
 
-    if (!function_->IsConstructor())
+    if (!function_->IsConstructor() && !function_->IsStatic())
     {
         args.Push("IntPtr self");
     }
@@ -353,20 +548,25 @@ void CSFunctionWriter::WriteManagedPInvokeFunctionSignature(String& source)
     if (function_->GetReturnClass())
     {
         JSBClass* retClass = function_->GetReturnClass();
+
         if (retClass->IsNumberArray())
         {
             args.Push("ref " + retClass->GetName() + " retValue");
         }
 
     }
+    else if (function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+    {
+        args.Push("IntPtr returnValue");
+    }
 
     String pstring;
     pstring.Join(args, ", ");
 
     String fname = function_->IsConstructor() ? "Constructor" : function_->GetName();
-    line = ToString("private static extern %s csb_%s_%s_%s(%s);\n",
+    line = ToString("private static extern %s csb_%s_%s_%s_%u(%s);\n",
                     returnType.CString(), package->GetName().CString(), klass->GetName().CString(),
-                    fname.CString(), pstring.CString());
+                    fname.CString(), function_->GetID(), pstring.CString());
 
     source += IndentLine(line);
 
@@ -379,12 +579,13 @@ void CSFunctionWriter::WriteManagedPInvokeFunctionSignature(String& source)
 void CSFunctionWriter::GenManagedFunctionParameters(String& sig)
 {
     // generate args
-    Vector<JSBFunctionType*>& parameters = function_->GetParameters();
+    const Vector<JSBFunctionType*>& parameters = function_->GetParameters();
 
     if (parameters.Size())
     {
         for (unsigned int i = 0; i < parameters.Size(); i++)
         {
+            bool isStruct = false;
             JSBFunctionType* ptype = parameters.At(i);
 
             // ignore "Context" parameters
@@ -392,21 +593,62 @@ void CSFunctionWriter::GenManagedFunctionParameters(String& sig)
             {
                 JSBClassType* classType = ptype->type_->asClassType();
                 JSBClass* klass = classType->class_;
+
                 if (klass->GetName() == "Context")
                 {
                     continue;
                 }
+
+                // TODO: we should have a better system for struct type in general
+                // This number array is really for JS
+                if (klass->IsNumberArray())
+                {
+                    isStruct = true;
+                }
             }
 
-            sig += CSTypeHelper::GetManagedTypeString(ptype);
-
+            String managedTypeString = CSTypeHelper::GetManagedTypeString(ptype);
             String init = ptype->initializer_;
+            String cast;
+            String postFix;
 
             if (init.Length())
             {
+                // check any required casts
+                String type = CSTypeHelper::GetManagedTypeString(ptype->type_);
+
+                if (type == "byte" && (function_->class_->GetPackage()->ContainsConstant(init)))
+                {
+                    cast = "byte";
+                }
+                
+                // instead of casting make sure to qualify initializers as float, C# requires a cast/or this
+                if (type == "float" && _CheckNumber(init) && !init.EndsWith("f"))
+                {
+                    postFix = "f";
+                }
+            }
+
+            if (!ptype->isConst_ && (ptype->isReference_ && isStruct))
+            {
+                // pass by reference
+                managedTypeString = "ref " + managedTypeString;
+            }
+
+            sig += managedTypeString;
+
+            if (init.Length())
+            {                
                 init = MapDefaultParameter(ptype);
                 if (init.Length())
-                    sig += " = " + init;
+                {                    
+                    if (cast.Length())
+                        sig.AppendWithFormat(" = (%s) %s", cast.CString(), init.CString());
+                    else
+                        sig += " = " + init;
+                }
+
+                sig += postFix;
 
             }
 
@@ -428,10 +670,16 @@ void CSFunctionWriter::WriteManagedConstructor(String& source)
 
     String line;
 
-    line = ToString("public %s (IntPtr native) : base (native)\n", klass->GetName().CString());
-    source += IndentLine(line);
-    source += IndentLine("{\n");
-    source += IndentLine("}\n\n");
+    if (!wroteConstructor_)
+    {
+        line = ToString("public %s (IntPtr native) : base (native)\n", klass->GetName().CString());
+        source += IndentLine(line);
+        source += IndentLine("{\n");
+        source += IndentLine("}\n\n");
+    }
+
+    // don't add wrapping constructor for overloads
+    wroteConstructor_ = true;
 
     String sig;
     GenManagedFunctionParameters(sig);
@@ -446,11 +694,16 @@ void CSFunctionWriter::WriteManagedConstructor(String& source)
 
     WriteDefaultStructParameters(source);
 
-    line = ToString("if (typeof(%s) == this.GetType()", klass->GetName().CString());
-    line += ToString(" || (this.GetType().BaseType == typeof(%s) && !NativeCore.GetNativeType(this.GetType())))\n", klass->GetName().CString());
+    source += IndentLine("if (nativeInstance == IntPtr.Zero)\n");
+    source += IndentLine("{\n");
 
-    source += IndentLine(line);
+    Indent();
 
+    source += IndentLine(ToString("var classType = typeof(%s);\n", klass->GetName().CString()));
+    source += IndentLine("var thisType = this.GetType();\n");
+    source += IndentLine("var thisTypeIsNative = NativeCore.IsNativeType(thisType);\n");    
+    source += IndentLine("var nativeAncsestorType = NativeCore.GetNativeAncestorType(thisType);\n");
+    source += IndentLine("if ( (thisTypeIsNative && (thisType == classType)) || (!thisTypeIsNative && (nativeAncsestorType == classType)))\n");
     source += IndentLine("{\n");
 
     Indent();
@@ -458,10 +711,14 @@ void CSFunctionWriter::WriteManagedConstructor(String& source)
     String callSig;
     GenPInvokeCallParameters(callSig);
 
-    line = ToString("nativeInstance = NativeCore.RegisterNative (csb_%s_%s_Constructor(%s), this);\n",
-                     package->GetName().CString(), klass->GetName().CString(), callSig.CString());
+    line = ToString("nativeInstance = NativeCore.RegisterNative (csb_%s_%s_Constructor_%u(%s), this);\n",
+                     package->GetName().CString(), klass->GetName().CString(), function_->GetID(), callSig.CString());
 
     source += IndentLine(line);
+
+    Dedent();
+
+    source += IndentLine("}\n");
 
     Dedent();
 
@@ -475,7 +732,7 @@ void CSFunctionWriter::WriteManagedConstructor(String& source)
 void CSFunctionWriter::GenPInvokeCallParameters(String& sig)
 {
     // generate args
-    Vector<JSBFunctionType*>& parameters = function_->GetParameters();
+    const Vector<JSBFunctionType*>& parameters = function_->GetParameters();
 
     if (parameters.Size())
     {
@@ -512,7 +769,7 @@ void CSFunctionWriter::GenPInvokeCallParameters(String& sig)
                 }
                 else
                 {
-                    sig += name + " == null ? IntPtr.Zero : " + name + ".nativeInstance";
+                    sig += name + " == null ? IntPtr.Zero : " + name + ".NativeInstance";
                 }
 
             }
@@ -535,15 +792,23 @@ void CSFunctionWriter::GenPInvokeCallParameters(String& sig)
                 sig += ", ";
 
             JSBClass* klass = function_->GetClass();
-            sig += ToString("ref %s%sReturnValue", klass->GetName().CString(), function_->GetName().CString());
+            sig += ToString("ref %s%s%uReturnValue", klass->GetName().CString(), function_->GetName().CString(), function_->GetID());
         }
     }
+    else if (!function_->IsStatic() && function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+    {
+        if (sig.Length())
+            sig += ", ";
 
+        JSBClass* klass = function_->GetClass();
+        sig += "returnScriptVector";
+    }
 
 }
 
 void CSFunctionWriter::WriteManagedFunction(String& source)
 {
+
     JSBClass* klass = function_->GetClass();
     JSBPackage* package = klass->GetPackage();
 
@@ -552,7 +817,12 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
 
     GenManagedFunctionParameters(sig);
 
-    String line = "public ";
+    String line = klass->IsInterface() ? "" : "public ";
+
+    if (function_->IsStatic())
+    {
+        line += "static ";
+    }
 
     bool marked = false;
     JSBClass* baseClass = klass->GetBaseClass();
@@ -569,10 +839,20 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
         }
     }
 
-    if (!marked && function_->IsVirtual())
+    if (!marked && function_->IsVirtual() && !klass->IsInterface())
         line += "virtual ";
 
-    line += ToString("%s %s (%s)\n", returnType.CString(), function_->GetName().CString(), sig.CString());
+    line += ToString("%s %s (%s)", returnType.CString(), function_->GetName().CString(), sig.CString());
+
+    if (klass->IsInterface())
+    {
+        // If we're an interface we have no implementation
+        line += ";\n\n";
+        source += IndentLine(line);
+        return;
+    }
+    else
+        line += "\n";
 
     source += IndentLine(line);
 
@@ -586,9 +866,29 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
 
     if (function_->GetReturnType())
     {
-        if (function_->GetReturnType()->type_->asStringType() || function_->GetReturnType()->type_->asStringHashType())
+
+        if (function_->GetReturnType()->type_->asStringType())
         {
             line += "return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(";
+        }
+        else if (function_->GetReturnType()->type_->asStringHashType())
+        {
+            line += "return ";
+        }
+        else if (function_->GetReturnType()->type_->asVectorType())
+        {
+            JSBVectorType* vtype = function_->GetReturnType()->type_->asVectorType();
+            
+            String marshalName = ToString("%s%s%uReturnValue", function_->GetClass()->GetName().CString(), function_->GetName().CString(), function_->GetID());
+            
+            // Defer creation of ScriptVector return value until method is called
+            if (vtype->vectorType_->asClassType())
+            {
+                String classname = vtype->vectorType_->asClassType()->class_->GetName();
+                source += IndentLine(ToString("if (%s == null) %s = new Vector<%s>();\n", marshalName.CString(), marshalName.CString(), classname.CString()));
+            }
+
+            source += IndentLine(ToString("var returnScriptVector = %s.GetScriptVector();\n", marshalName.CString()));
         }
         else if (CSTypeHelper::IsSimpleReturn(function_->GetReturnType()))
             line += "return ";
@@ -605,17 +905,26 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
     String callSig;
     GenPInvokeCallParameters(callSig);
 
-    line += ToString("csb_%s_%s_%s(nativeInstance",
-                     package->GetName().CString(), klass->GetName().CString(), function_->GetName().CString());
+    String nativeInstance;
+
+    if (!function_->IsStatic())
+        nativeInstance = "nativeInstance";
+
+    line += ToString("csb_%s_%s_%s_%u(%s",
+                     package->GetName().CString(), klass->GetName().CString(), function_->GetName().CString(), function_->GetID(), nativeInstance.CString());
 
     if (callSig.Length())
     {
-        line += ", " + callSig;
+        if (nativeInstance.Length())
+            line += ", " + callSig;
+        else
+            line += callSig;
+
     }
 
     if (function_->GetReturnType())
     {
-        if (function_->GetReturnType()->type_->asStringType() || function_->GetReturnType()->type_->asStringHashType())
+        if (function_->GetReturnType()->type_->asStringType())
             line += ")";
     }
 
@@ -632,7 +941,7 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
 
             if (retClass->IsNumberArray())
             {
-                line = ToString("return %s%sReturnValue;", klass->GetName().CString(), function_->GetName().CString());
+                line = ToString("return %s%s%uReturnValue;", klass->GetName().CString(), function_->GetName().CString(), function_->GetID());
             }
             else
             {
@@ -640,10 +949,18 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
             }
 
             source += IndentLine(line);
+
+            source+= "\n";
         }
     }
-
-    source+= "\n";
+    else if (function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+    {
+        if (!function_->IsStatic())
+        {
+            source += IndentLine(ToString("return %s%s%uReturnValue;", klass->GetName().CString(), function_->GetName().CString(), function_->GetID()));
+            source+= "\n";
+        }
+    }
 
     Dedent();
 
@@ -653,10 +970,10 @@ void CSFunctionWriter::WriteManagedFunction(String& source)
 
 void CSFunctionWriter::GenerateManagedSource(String& sourceOut)
 {
+    JSBClass* klass = function_->GetClass();
 
     String source = "";
 
-    Indent();
     Indent();
     Indent();
 
@@ -665,7 +982,11 @@ void CSFunctionWriter::GenerateManagedSource(String& sourceOut)
         // monodocer -assembly:NETCore.dll -path:en -pretty
         // mdoc export-html -o htmldocs en
         source += IndentLine("/// <summary>\n");
-        source += IndentLine("/// " + function_->GetDocString() + "\n");
+        if (function_->GetDocString().Contains('\n'))
+            source += IndentLine("/* " + function_->GetDocString() + "*/\n");
+        else
+            source += IndentLine("/// " + function_->GetDocString() + "\n");
+
         source += IndentLine("/// </summary>\n");
     }
 
@@ -676,27 +997,51 @@ void CSFunctionWriter::GenerateManagedSource(String& sourceOut)
 
     WriteManagedPInvokeFunctionSignature(source);
 
-    // data marshaller
-    if (function_->GetReturnType() && !CSTypeHelper::IsSimpleReturn(function_->GetReturnType()))
+    if (!klass->IsInterface())
     {
-        if (function_->GetReturnClass())
+        // data marshaller
+        if (function_->GetReturnType() && !CSTypeHelper::IsSimpleReturn(function_->GetReturnType()))
         {
-            JSBClass* retClass = function_->GetReturnClass();
-            if (retClass->IsNumberArray())
+            if (function_->GetReturnClass())
             {
-                JSBClass* klass = function_->GetClass();
-                String managedType = CSTypeHelper::GetManagedTypeString(function_->GetReturnType());
-                String marshal = "private " + managedType + " ";
+                JSBClass* retClass = function_->GetReturnClass();
 
-                marshal += ToString("%s%sReturnValue = new %s();\n", klass->GetName().CString(), function_->GetName().CString(), managedType.CString());
+                if (retClass->IsNumberArray())
+                {
+                    String managedType = CSTypeHelper::GetManagedTypeString(function_->GetReturnType());
+                    String marshal = "private ";
 
-                sourceOut += IndentLine(marshal);
+                    if (function_->IsStatic())
+                        marshal += "static ";
+
+                    marshal += managedType + " ";
+
+                    marshal += ToString("%s%s%uReturnValue;\n", klass->GetName().CString(), function_->GetName().CString(), function_->GetID());
+
+                    sourceOut += IndentLine(marshal);
+                }
             }
         }
+        else if (!function_->IsStatic() && function_->GetReturnType() && function_->GetReturnType()->type_->asVectorType())
+        {
+            JSBVectorType* vtype = function_->GetReturnType()->type_->asVectorType();
 
+            if (vtype->vectorType_->asClassType())
+            {
+                String classname = vtype->vectorType_->asClassType()->class_->GetName();
+                String typestring = "Vector<" + classname + ">";
+
+                String marshal = "private " + typestring + " ";
+
+                marshal += ToString("%s%s%uReturnValue = null;\n", function_->GetClass()->GetName().CString(), function_->GetName().CString(), function_->GetID());
+
+                sourceOut += IndentLine(marshal);
+
+            }
+
+        }
     }
 
-    Dedent();
     Dedent();
     Dedent();
 
@@ -734,19 +1079,7 @@ String CSFunctionWriter::MapDefaultParameter(JSBFunctionType* parameter)
     if (init == "true" || init == "false")
         return init;
 
-    if (init == "0.0f")
-        return init;
-
-    if (init == "1.0f")
-        return init;
-
-    if (init == "0.1f")
-        return init;
-
-    if (init == "0")
-        return init;
-
-    if (init == "-1")
+    if (_CheckNumber(init))
         return init;
 
     if (init == "\"\\t\"")
@@ -809,6 +1142,14 @@ String CSFunctionWriter::MapDefaultParameter(JSBFunctionType* parameter)
         dparm.assignment = "Quaternion.Identity";
         defaultStructParameters_.Push(dparm);
         return "default(Quaternion)";
+    }
+
+    if (init == "StringHash::ZERO")
+    {
+        dparm.type = "StringHash";
+        dparm.assignment = "StringHash.Zero";
+        defaultStructParameters_.Push(dparm);
+        return "default(StringHash)";
     }
 
     return String::EMPTY;

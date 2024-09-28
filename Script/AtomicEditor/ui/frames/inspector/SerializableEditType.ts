@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 class SerializableEditType {
@@ -27,7 +42,7 @@ class SerializableEditType {
 
         var value: any;
 
-        for (var i in this.objects) {
+        for (var i = 0; i < this.objects.length; i++) {
 
             var object = this.objects[i];
 
@@ -36,7 +51,7 @@ class SerializableEditType {
                 value = object.getAttribute(attrInfo.name);
                 if (index >= 0) {
 
-                    if (attrInfo.type == Atomic.VAR_RESOURCEREFLIST) {
+                    if (attrInfo.type == Atomic.VariantType.VAR_RESOURCEREFLIST) {
 
                         value = value.resources[index];
 
@@ -49,7 +64,7 @@ class SerializableEditType {
 
                 var value2 = object.getAttribute(attrInfo.name);
                 if (index >= 0) {
-                    if (attrInfo.type == Atomic.VAR_RESOURCEREFLIST) {
+                    if (attrInfo.type == Atomic.VariantType.VAR_RESOURCEREFLIST) {
 
                         value2 = value2.resources[index];
 
@@ -70,7 +85,13 @@ class SerializableEditType {
 
     }
 
-    onAttributeInfoEdited(attrInfo: Atomic.AttributeInfo, value: any, index: number = -1, genEdit: boolean = true) {
+    /**
+     * Updates selected object attribute on edit, index parameter is for the edit type (for example NumberArrayAttributeEdit)
+     * attrArrayIndex is for setting which array index to set for array AttributeInfo types
+     */
+    onAttributeInfoEdited(attrInfo: Atomic.AttributeInfo, value: any, index: number = -1, genEdit: boolean = true, attrArrayIndex: number = -1) {
+
+        let editTypeName = this.objects.length > 0 ? this.objects[0].typeName : "";
 
         for (var i in this.objects) {
 
@@ -78,23 +99,23 @@ class SerializableEditType {
 
             if (index >= 0) {
 
-                var idxValue = object.getAttribute(attrInfo.name);
+                var idxValue = object.getAttribute(attrInfo.name, attrArrayIndex);
 
-                if (attrInfo.type == Atomic.VAR_RESOURCEREFLIST) {
+                if (attrInfo.type == Atomic.VariantType.VAR_RESOURCEREFLIST) {
 
                     idxValue.resources[index] = value;
-                    object.setAttribute(attrInfo.name, idxValue);
+                    object.setAttribute(attrInfo.name, idxValue, attrArrayIndex);
 
                 } else {
 
                     idxValue[index] = value;
-                    object.setAttribute(attrInfo.name, idxValue);
+                    object.setAttribute(attrInfo.name, idxValue, attrArrayIndex);
 
                 }
 
             } else {
 
-                object.setAttribute(attrInfo.name, value);
+                object.setAttribute(attrInfo.name, value, attrArrayIndex);
 
             }
 
@@ -102,6 +123,25 @@ class SerializableEditType {
 
         if (!genEdit)
             return;
+
+        let scene = this.getEditScene();
+
+        if (scene) {
+
+            scene.sendEvent(Editor.SceneEditEndEventType);
+
+            if (editTypeName != "Node") {
+
+                scene.sendEvent(Editor.ComponentEditEndEventType);
+
+            }
+        }
+
+
+
+    }
+
+    getEditScene():Atomic.Scene {
 
         var node: Atomic.Node = null;
         if (this.nodes.length) {
@@ -111,8 +151,9 @@ class SerializableEditType {
         }
 
         if (node)
-            node.scene.sendEvent("SceneEditEnd");
+            return node.scene;
 
+        return null;
     }
 
     compareTypes(otherType: SerializableEditType, multiSelect:boolean = false): boolean {

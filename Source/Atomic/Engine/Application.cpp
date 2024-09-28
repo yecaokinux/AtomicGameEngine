@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2016 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,23 +23,37 @@
 #include "../Precompiled.h"
 
 #include "../Engine/Application.h"
-#include "../Engine/Engine.h"
-#ifdef IOS
-#include "../Graphics/Graphics.h"
-#include "../Graphics/GraphicsImpl.h"
-#endif
 #include "../IO/IOEvents.h"
 #include "../IO/Log.h"
+// ATOMIC BEGIN
+#include "../Core/Profiler.h"
+// ATOMIC END
+
+#if defined(IOS) || defined(TVOS)
+#include "../Graphics/Graphics.h"
+// ATOMIC BEGIN
+#include <SDL/include/SDL.h>
+// ATOMIC END
+#endif
 
 #include "../DebugNew.h"
+
+// ATOMIC BEGIN
+#include "../Metrics/Metrics.h"
+#include "../Engine/EngineDefs.h"
+// ATOMIC END
 
 namespace Atomic
 {
 
-#if defined(IOS) || defined(EMSCRIPTEN)
+// ATOMIC BEGIN
+bool Application::autoMetrics_ = false;
+// ATOMIC END
+
+#if defined(IOS) || defined(TVOS) || defined(__EMSCRIPTEN__)
 // Code for supporting SDL_iPhoneSetAnimationCallback() and emscripten_set_main_loop_arg()
-#if defined(EMSCRIPTEN)
-#include <emscripten.h>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
 #endif
 void RunFrame(void* data)
 {
@@ -53,20 +67,37 @@ Application::Application(Context* context) :
 {
     engineParameters_ = Engine::ParseParameters(GetArguments());
 
+    // ATOMIC BEGIN
+
+    // register metrics subsystem
+    context->RegisterSubsystem(new Metrics(context));
+
+    if (autoMetrics_ || engineParameters_[EP_AUTO_METRICS].GetBool())
+    {
+        // ensure autoMetrics reflects state
+        autoMetrics_ = true;
+        context->GetSubsystem<Metrics>()->Enable();
+    }
+
+    // ATOMIC END
+
     // Create the Engine, but do not initialize it yet. Subsystems except Graphics & Renderer are registered at this point
     engine_ = new Engine(context);
 
     // Subscribe to log messages so that can show errors if ErrorExit() is called with empty message
-    SubscribeToEvent(E_LOGMESSAGE, HANDLER(Application, HandleLogMessage));
+    SubscribeToEvent(E_LOGMESSAGE, ATOMIC_HANDLER(Application, HandleLogMessage));
 }
 
 int Application::Run()
 {
-    // Emscripten-specific: C++ exceptions are turned off by default in -O1 (and above), unless '-s DISABLE_EXCEPTION_CATCHING=0' flag is set
-    // Urho3D build configuration uses -O3 (Release), -O2 (RelWithDebInfo), and -O0 (Debug)
-    // Thus, the try-catch block below should be optimised out except in Debug build configuration
+    // ATOMIC BEGIN
+    // Profiler requires main thread to be named "Main" as fps calculations depend on it.
+    ATOMIC_PROFILE_THREAD("Main");
+    // ATOMIC END
+#if !defined(__GNUC__) || __EXCEPTIONS
     try
     {
+#endif
         Setup();
         if (exitCode_)
             return exitCode_;
@@ -81,29 +112,31 @@ int Application::Run()
         if (exitCode_)
             return exitCode_;
 
-        // Platforms other than iOS and EMSCRIPTEN run a blocking main loop
-#if !defined(IOS) && !defined(EMSCRIPTEN)
+        // Platforms other than iOS/tvOS and Emscripten run a blocking main loop
+#if !defined(IOS) && !defined(TVOS) && !defined(__EMSCRIPTEN__)
         while (!engine_->IsExiting())
             engine_->RunFrame();
 
         Stop();
-        // iOS will setup a timer for running animation frames so eg. Game Center can run. In this case we do not
+        // iOS/tvOS will setup a timer for running animation frames so eg. Game Center can run. In this case we do not
         // support calling the Stop() function, as the application will never stop manually
 #else
-#if defined(IOS)
-        SDL_iPhoneSetAnimationCallback(GetSubsystem<Graphics>()->GetImpl()->GetWindow(), 1, &RunFrame, engine_);
-#elif defined(EMSCRIPTEN)
+#if defined(IOS) || defined(TVOS)
+        SDL_iPhoneSetAnimationCallback(GetSubsystem<Graphics>()->GetWindow(), 1, &RunFrame, engine_);
+#elif defined(__EMSCRIPTEN__)
         emscripten_set_main_loop_arg(RunFrame, engine_, 0, 1);
 #endif
 #endif
 
         return exitCode_;
+#if !defined(__GNUC__) || __EXCEPTIONS
     }
     catch (std::bad_alloc&)
     {
         ErrorDialog(GetTypeName(), "An out-of-memory error occurred. The application will now exit.");
         return EXIT_FAILURE;
     }
+#endif
 }
 
 void Application::ErrorExit(const String& message)

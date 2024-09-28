@@ -25,7 +25,9 @@
 #endif
 
 #include "../Core/CoreEvents.h"
+#include "../Core/Context.h"
 #include "../Engine/Engine.h"
+#include "../Input/InputEvents.h"
 #include "../IO/Log.h"
 
 #include "IPCBroker.h"
@@ -33,13 +35,42 @@
 #include "IPC.h"
 #include "IPCEvents.h"
 
+#if defined(ATOMIC_PLATFORM_WINDOWS)
+
+#include <windows.h>
+#undef PostMessage
+
+#endif
+
 namespace Atomic
 {
 
 IPC::IPC(Context* context) : Object(context),
     workerChannelID_(0)
 {
-    SubscribeToEvent(E_UPDATE, HANDLER(IPC, HandleUpdate));
+    SubscribeToEvent(E_BEGINFRAME, ATOMIC_HANDLER(IPC, HandleBeginFrame));
+
+#ifdef ATOMIC_PLATFORM_WINDOWS
+
+    jobHandle_ = CreateJobObject(NULL, NULL);
+    if (!jobHandle_)
+    {
+        ATOMIC_LOGERROR("IPC::IPC - Unable to create IPC job");
+    }
+    else
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
+
+        // Configure all child processes associated with the job to terminate when main process is closed
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (0 == SetInformationJobObject(jobHandle_, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli)))
+        {
+            ATOMIC_LOGERROR("IPC::IPC - Unable set job information");
+            jobHandle_ = 0;
+        }
+    }
+
+#endif
 }
 
 IPC::~IPC()
@@ -62,18 +93,85 @@ bool IPC::InitWorker(unsigned id, IPCHandle fd1, IPCHandle fd2)
 #ifndef ATOMIC_PLATFORM_WINDOWS
     // close server fd
     close(fd1);
-	worker_ = new IPCWorker(context_, fd2, id);
+    worker_ = new IPCWorker(context_, fd2, id);
 #else
-	worker_ = new IPCWorker(context_, fd1, fd2, id);
+    worker_ = new IPCWorker(context_, fd1, fd2, id);
 #endif
 
-
-
-	worker_->Run();
+    worker_->Run();
 
     SendEventToBroker(E_IPCWORKERSTART);
 
     return true;
+}
+
+bool IPC::ProcessArguments(const Vector<String>& arguments, int& id, IPCHandle& fd0, IPCHandle& fd1)
+{
+    id = -1;
+    fd0 = INVALID_IPCHANDLE_VALUE;
+    fd1 = INVALID_IPCHANDLE_VALUE;
+
+    for (unsigned i = 0; i < arguments.Size(); ++i)
+    {
+        if (arguments[i].Length() > 1)
+        {
+            String argument = arguments[i].ToLower();
+
+            if (argument.StartsWith("--ipc-id="))
+            {
+                Vector<String> idc = argument.Split(argument.CString(), '=');
+                if (idc.Size() == 2)
+
+                    id = ToInt(idc[1].CString());
+            }
+
+            else if (argument.StartsWith("--ipc-server=") || argument.StartsWith("--ipc-client="))
+            {
+                ATOMIC_LOGINFOF("Starting IPCWorker %s", argument.CString());
+
+                Vector<String> ipc = argument.Split(argument.CString(), '=');
+
+                if (ipc.Size() == 2)
+                {
+                    if (argument.StartsWith("--ipc-server="))
+                    {
+#ifdef ATOMIC_PLATFORM_WINDOWS
+                        // clientRead
+                        WString wipc(ipc[1]);
+                        HANDLE pipe = reinterpret_cast<HANDLE>(_wtoi64(wipc.CString()));
+                        fd0 = pipe;
+#else
+                        int fd = ToInt(ipc[1].CString());
+                        fd0 = fd;
+#endif
+                    }
+                    else
+                    {
+#ifdef ATOMIC_PLATFORM_WINDOWS
+                        // clientWrite
+                        WString wipc(ipc[1]);
+                        HANDLE pipe = reinterpret_cast<HANDLE>(_wtoi64(wipc.CString()));
+                        fd1 = pipe;
+#else
+                        int fd = ToInt(ipc[1].CString());
+                        fd1 = fd;
+#endif
+                    }
+
+                }
+
+            }
+
+        }
+    }
+
+    if (id > 0 && fd0 != INVALID_IPCHANDLE_VALUE && fd1 != INVALID_IPCHANDLE_VALUE)
+    {
+        return true;
+    }
+
+    return false;
+
 }
 
 IPCBroker* IPC::SpawnWorker(const String& command, const Vector<String>& args, const String& initialDirectory)
@@ -102,7 +200,7 @@ void IPC::SendEventToBroker(StringHash eventType, VariantMap& eventData)
     }
 }
 
-void IPC::HandleUpdate(StringHash eventType, VariantMap& eventData)
+void IPC::HandleBeginFrame(StringHash eventType, VariantMap& eventData)
 {
     // If we're a worker, if update fails, time to exit
     if (worker_.NotNull())
@@ -181,5 +279,18 @@ void IPC::QueueEvent(unsigned id, StringHash eventType, VariantMap& eventData)
     eventMutex_.Release();
 }
 
+void IPC::Shutdown()
+{
+
+    // request broker exit
+    for (unsigned i = 0; i < brokers_.Size(); i++)
+    {
+        SharedPtr<IPCBroker>& broker = brokers_[i];
+        VariantMap evData;
+        broker->PostMessage(E_EXITREQUESTED, evData);
+    }
+
+    context_->RemoveSubsystem<IPC>();
+}
 
 }

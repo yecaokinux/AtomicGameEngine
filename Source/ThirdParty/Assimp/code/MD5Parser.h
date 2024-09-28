@@ -49,7 +49,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../include/assimp/types.h"
 #include "ParsingUtils.h"
 #include <vector>
+// Urho3D: VS2008 compatibility
+#if !defined(_MSC_VER) || (_MSC_VER >= 1600)
 #include <stdint.h>
+#else
+#include "../include/assimp/Compiler/pstdint.h"
+#endif
 
 struct aiFace;
 
@@ -262,6 +267,9 @@ inline void ConvertQuaternion (const aiVector3D& in, aiQuaternion& out) {
     if (t < 0.0f)
         out.w = 0.0f;
     else out.w = std::sqrt (t);
+
+    // Assimp convention.
+    out.w *= -1.f;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +285,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5MeshParser(SectionList& mSections);
+    explicit MD5MeshParser(SectionList& mSections);
 
     //! List of all meshes
     MeshList mMeshes;
@@ -302,7 +310,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5AnimParser(SectionList& mSections);
+    explicit MD5AnimParser(SectionList& mSections);
 
 
     //! Output frame rate
@@ -334,7 +342,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5CameraParser(SectionList& mSections);
+    explicit MD5CameraParser(SectionList& mSections);
 
 
     //! Output frame rate

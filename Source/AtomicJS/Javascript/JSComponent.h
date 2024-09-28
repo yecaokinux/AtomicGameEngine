@@ -33,13 +33,12 @@ namespace Atomic
 class JSVM;
 
 /// JavaScript component
-class ATOMIC_API JSComponent : public ScriptComponent
+class JSComponent : public ScriptComponent
 {
     friend class JSComponentFactory;
     friend class JSComponentFile;
 
-    OBJECT(JSComponent);
-    BASEOBJECT(ScriptComponent);
+    ATOMIC_OBJECT(JSComponent, ScriptComponent);
 
     enum EventFlags
     {
@@ -59,10 +58,6 @@ public:
     /// Register object factory.
     static void RegisterObject(Context* context);
 
-    bool Load(Deserializer& source, bool setInstanceDefault);
-    bool LoadXML(const XMLElement& source, bool setInstanceDefault);
-    void ApplyAttributes();
-
     /// Match script name
     bool MatchScriptName(const String& path);
 
@@ -79,11 +74,12 @@ public:
 
     void SetDestroyed() { destroyed_ = true; }
 
+    bool IsInstanceInitialized();    
     void InitInstance(bool hasArgs = false, int argIdx = 0);
 
     /// Get script attribute
     ResourceRef GetComponentFileAttr() const;
-    ScriptComponentFile* GetComponentFile() { return componentFile_; }
+    ScriptComponentFile* GetComponentFile() const { return componentFile_; }
 
     /// Set script attribute.
     void SetComponentFile(JSComponentFile* cfile) { componentFile_ = cfile; }
@@ -129,8 +125,6 @@ private:
     virtual void FixedUpdate(float timeStep);
     /// Called on physics post-update, fixed timestep.
     virtual void FixedPostUpdate(float timeStep);
-
-    void UpdateReferences(bool remove = false);
 
     /// Requested event subscription mask.
     unsigned char updateEventMask_;

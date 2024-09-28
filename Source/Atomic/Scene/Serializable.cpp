@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@
 #include "../IO/Log.h"
 #include "../IO/Serializer.h"
 #include "../Resource/XMLElement.h"
+#include "../Resource/JSONValue.h"
 #include "../Scene/ReplicationState.h"
 #include "../Scene/SceneEvents.h"
 #include "../Scene/Serializable.h"
@@ -56,18 +57,12 @@ static unsigned RemapAttributeIndex(const Vector<AttributeInfo>* attributes, con
 
 Serializable::Serializable(Context* context) :
     Object(context),
-    networkState_(0),
-    instanceDefaultValues_(0),
     temporary_(false)
 {
 }
 
 Serializable::~Serializable()
 {
-    delete networkState_;
-    networkState_ = 0;
-    delete instanceDefaultValues_;
-    instanceDefaultValues_ = 0;
 }
 
 void Serializable::OnSetAttribute(const AttributeInfo& attr, const Variant& src)
@@ -156,12 +151,16 @@ void Serializable::OnSetAttribute(const AttributeInfo& attr, const Variant& src)
         *(reinterpret_cast<IntVector2*>(dest)) = src.GetIntVector2();
         break;
 
+    case VAR_INTVECTOR3:
+        *(reinterpret_cast<IntVector3*>(dest)) = src.GetIntVector3();
+        break;
+
     case VAR_DOUBLE:
         *(reinterpret_cast<double*>(dest)) = src.GetDouble();
         break;
 
     default:
-        LOGERROR("Unsupported attribute type for OnSetAttribute()");
+        ATOMIC_LOGERROR("Unsupported attribute type for OnSetAttribute()");
         return;
     }
 
@@ -256,12 +255,16 @@ void Serializable::OnGetAttribute(const AttributeInfo& attr, Variant& dest) cons
         dest = *(reinterpret_cast<const IntVector2*>(src));
         break;
 
+    case VAR_INTVECTOR3:
+        dest = *(reinterpret_cast<const IntVector3*>(src));
+        break;
+
     case VAR_DOUBLE:
         dest = *(reinterpret_cast<const double*>(src));
         break;
 
     default:
-        LOGERROR("Unsupported attribute type for OnGetAttribute()");
+        ATOMIC_LOGERROR("Unsupported attribute type for OnGetAttribute()");
         return;
     }
 }
@@ -290,7 +293,7 @@ bool Serializable::Load(Deserializer& source, bool setInstanceDefault)
 
         if (source.IsEof())
         {
-            LOGERROR("Could not load " + GetTypeName() + ", stream not open or at end");
+            ATOMIC_LOGERROR("Could not load " + GetTypeName() + ", stream not open or at end");
             return false;
         }
 
@@ -315,14 +318,14 @@ bool Serializable::Save(Serializer& dest) const
     for (unsigned i = 0; i < attributes->Size(); ++i)
     {
         const AttributeInfo& attr = attributes->At(i);
-        if (!(attr.mode_ & AM_FILE))
+        if (!(attr.mode_ & AM_FILE) || (attr.mode_ & AM_FILEREADONLY) == AM_FILEREADONLY)
             continue;
 
         OnGetAttribute(attr, value);
 
         if (!dest.WriteVariantData(value))
         {
-            LOGERROR("Could not save " + GetTypeName() + ", writing to stream failed");
+            ATOMIC_LOGERROR("Could not save " + GetTypeName() + ", writing to stream failed");
             return false;
         }
     }
@@ -334,7 +337,7 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
 {
     if (source.IsNull())
     {
-        LOGERROR("Could not load " + GetTypeName() + ", null source element");
+        ATOMIC_LOGERROR("Could not load " + GetTypeName() + ", null source element");
         return false;
     }
 
@@ -378,7 +381,7 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
                     if (enumFound)
                         varValue = enumValue;
                     else
-                        LOGWARNING("Unknown enum value " + value + " in attribute " + attr.name_);
+                        ATOMIC_LOGWARNING("Unknown enum value " + value + " in attribute " + attr.name_);
                 }
                 else
                     varValue = attrElem.GetVariantValue(attr.type_);
@@ -402,9 +405,102 @@ bool Serializable::LoadXML(const XMLElement& source, bool setInstanceDefault)
         }
 
         if (!attempts)
-            LOGWARNING("Unknown attribute " + name + " in XML data");
+            ATOMIC_LOGWARNING("Unknown attribute " + name + " in XML data");
 
         attrElem = attrElem.GetNext("attribute");
+    }
+
+    return true;
+}
+
+bool Serializable::LoadJSON(const JSONValue& source, bool setInstanceDefault)
+{
+    if (source.IsNull())
+    {
+        ATOMIC_LOGERROR("Could not load " + GetTypeName() + ", null JSON source element");
+        return false;
+    }
+
+    const Vector<AttributeInfo>* attributes = GetAttributes();
+    if (!attributes)
+        return true;
+
+    // Get attributes value
+    JSONValue attributesValue = source.Get("attributes");
+    if (attributesValue.IsNull())
+        return true;
+    // Warn if the attributes value isn't an object
+    if (!attributesValue.IsObject())
+    {
+        ATOMIC_LOGWARNING("'attributes' object is present in " + GetTypeName() + " but is not a JSON object; skipping load");
+        return true;
+    }
+
+    const JSONObject& attributesObject = attributesValue.GetObject();
+
+    unsigned startIndex = 0;
+
+    for (JSONObject::ConstIterator it = attributesObject.Begin(); it != attributesObject.End();)
+    {
+        String name = it->first_;
+        const JSONValue& value = it->second_;
+        unsigned i = startIndex;
+        unsigned attempts = attributes->Size();
+
+        while (attempts)
+        {
+            const AttributeInfo& attr = attributes->At(i);
+            if ((attr.mode_ & AM_FILE) && !attr.name_.Compare(name, true))
+            {
+                Variant varValue;
+
+                // If enums specified, do enum lookup ad int assignment. Otherwise assign variant directly
+                if (attr.enumNames_)
+                {
+                    String valueStr = value.GetString();
+                    bool enumFound = false;
+                    int enumValue = 0;
+                    const char** enumPtr = attr.enumNames_;
+                    while (*enumPtr)
+                    {
+                        if (!valueStr.Compare(*enumPtr, false))
+                        {
+                            enumFound = true;
+                            break;
+                        }
+                        ++enumPtr;
+                        ++enumValue;
+                    }
+                    if (enumFound)
+                        varValue = enumValue;
+                    else
+                        ATOMIC_LOGWARNING("Unknown enum value " + valueStr + " in attribute " + attr.name_);
+                }
+                else
+                    varValue = value.GetVariantValue(attr.type_);
+
+                if (!varValue.IsEmpty())
+                {
+                    OnSetAttribute(attr, varValue);
+
+                    if (setInstanceDefault)
+                        SetInstanceDefault(attr.name_, varValue);
+                }
+
+                startIndex = (i + 1) % attributes->Size();
+                break;
+            }
+            else
+            {
+                i = (i + 1) % attributes->Size();
+                --attempts;
+            }
+        }
+
+        if (!attempts)
+            ATOMIC_LOGWARNING("Unknown attribute " + name + " in JSON data");
+
+        it++;
     }
 
     return true;
@@ -414,7 +510,7 @@ bool Serializable::SaveXML(XMLElement& dest) const
 {
     if (dest.IsNull())
     {
-        LOGERROR("Could not save " + GetTypeName() + ", null destination element");
+        ATOMIC_LOGERROR("Could not save " + GetTypeName() + ", null destination element");
         return false;
     }
 
@@ -427,7 +523,7 @@ bool Serializable::SaveXML(XMLElement& dest) const
     for (unsigned i = 0; i < attributes->Size(); ++i)
     {
         const AttributeInfo& attr = attributes->At(i);
-        if (!(attr.mode_ & AM_FILE))
+        if (!(attr.mode_ & AM_FILE) || (attr.mode_ & AM_FILEREADONLY) == AM_FILEREADONLY)
             continue;
 
         OnGetAttribute(attr, value);
@@ -452,17 +548,56 @@ bool Serializable::SaveXML(XMLElement& dest) const
     return true;
 }
 
+bool Serializable::SaveJSON(JSONValue& dest) const
+{
+    const Vector<AttributeInfo>* attributes = GetAttributes();
+    if (!attributes)
+        return true;
+
+    Variant value;
+    JSONValue attributesValue;
+
+    for (unsigned i = 0; i < attributes->Size(); ++i)
+    {
+        const AttributeInfo& attr = attributes->At(i);
+        if (!(attr.mode_ & AM_FILE) || (attr.mode_ & AM_FILEREADONLY) == AM_FILEREADONLY)
+            continue;
+
+        OnGetAttribute(attr, value);
+        Variant defaultValue(GetAttributeDefault(i));
+
+        // In JSON serialization default values can be skipped. This will make the file easier to read or edit manually
+        if (value == defaultValue && !SaveDefaultAttributes())
+            continue;
+
+        JSONValue attrVal;
+        // If enums specified, set as an enum string. Otherwise set directly as a Variant
+        if (attr.enumNames_)
+        {
+            int enumValue = value.GetInt();
+            attrVal = attr.enumNames_[enumValue];
+        }
+        else
+            attrVal.SetVariantValue(value, context_);
+
+        attributesValue.Set(attr.name_, attrVal);
+    }
+    dest.Set("attributes", attributesValue);
+
+    return true;
+}
+
 bool Serializable::SetAttribute(unsigned index, const Variant& value)
 {
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return false;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        ATOMIC_LOGERROR("Attribute index out of bounds");
         return false;
     }
 
@@ -476,7 +611,7 @@ bool Serializable::SetAttribute(unsigned index, const Variant& value)
     }
     else
     {
-        LOGERROR("Could not set attribute " + attr.name_ + ": expected type " + Variant::GetTypeName(attr.type_) +
+        ATOMIC_LOGERROR("Could not set attribute " + attr.name_ + ": expected type " + Variant::GetTypeName(attr.type_) +
                  " but got " + value.GetTypeName());
         return false;
     }
@@ -487,7 +622,7 @@ bool Serializable::SetAttribute(const String& name, const Variant& value)
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return false;
     }
 
@@ -503,14 +638,14 @@ bool Serializable::SetAttribute(const String& name, const Variant& value)
             }
             else
             {
-                LOGERROR("Could not set attribute " + i->name_ + ": expected type " + Variant::GetTypeName(i->type_)
+                ATOMIC_LOGERROR("Could not set attribute " + i->name_ + ": expected type " + Variant::GetTypeName(i->type_)
                          + " but got " + value.GetTypeName());
                 return false;
             }
         }
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    ATOMIC_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return false;
 }
 
@@ -536,8 +671,7 @@ void Serializable::ResetToDefault()
 
 void Serializable::RemoveInstanceDefault()
 {
-    delete instanceDefaultValues_;
-    instanceDefaultValues_ = 0;
+    instanceDefaultValues_.Reset();
 }
 
 void Serializable::SetTemporary(bool enable)
@@ -557,11 +691,11 @@ void Serializable::SetTemporary(bool enable)
 
 void Serializable::SetInterceptNetworkUpdate(const String& attributeName, bool enable)
 {
-    const Vector<AttributeInfo>* attributes = GetNetworkAttributes();
+    AllocateNetworkState();
+
+    const Vector<AttributeInfo>* attributes = networkState_->attributes_;
     if (!attributes)
         return;
-
-    AllocateNetworkState();
 
     for (unsigned i = 0; i < attributes->Size(); ++i)
     {
@@ -579,11 +713,26 @@ void Serializable::SetInterceptNetworkUpdate(const String& attributeName, bool e
 
 void Serializable::AllocateNetworkState()
 {
-    if (!networkState_)
+    if (networkState_)
+        return;
+
+    const Vector<AttributeInfo>* networkAttributes = GetNetworkAttributes();
+    networkState_ = new NetworkState();
+    networkState_->attributes_ = networkAttributes;
+
+    if (!networkAttributes)
+        return;
+
+    unsigned numAttributes = networkAttributes->Size();
+
+    if (networkState_->currentValues_.Size() != numAttributes)
     {
-        const Vector<AttributeInfo>* networkAttributes = GetNetworkAttributes();
-        networkState_ = new NetworkState();
-        networkState_->attributes_ = networkAttributes;
+        networkState_->currentValues_.Resize(numAttributes);
+        networkState_->previousValues_.Resize(numAttributes);
+
+        // Copy the default attribute values to the previous state as a starting point
+        for (unsigned i = 0; i < numAttributes; ++i)
+            networkState_->previousValues_[i] = networkAttributes->At(i).defaultValue_;
     }
 }
 
@@ -591,7 +740,7 @@ void Serializable::WriteInitialDeltaUpdate(Serializer& dest, unsigned char timeS
 {
     if (!networkState_)
     {
-        LOGERROR("WriteInitialDeltaUpdate called without allocated NetworkState");
+        ATOMIC_LOGERROR("WriteInitialDeltaUpdate called without allocated NetworkState");
         return;
     }
 
@@ -625,7 +774,7 @@ void Serializable::WriteDeltaUpdate(Serializer& dest, const DirtyBits& attribute
 {
     if (!networkState_)
     {
-        LOGERROR("WriteDeltaUpdate called without allocated NetworkState");
+        ATOMIC_LOGERROR("WriteDeltaUpdate called without allocated NetworkState");
         return;
     }
 
@@ -651,7 +800,7 @@ void Serializable::WriteLatestDataUpdate(Serializer& dest, unsigned char timeSta
 {
     if (!networkState_)
     {
-        LOGERROR("WriteLatestDataUpdate called without allocated NetworkState");
+        ATOMIC_LOGERROR("WriteLatestDataUpdate called without allocated NetworkState");
         return;
     }
 
@@ -759,12 +908,12 @@ Variant Serializable::GetAttribute(unsigned index) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return ret;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        ATOMIC_LOGERROR("Attribute index out of bounds");
         return ret;
     }
 
@@ -779,7 +928,7 @@ Variant Serializable::GetAttribute(const String& name) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return ret;
     }
 
@@ -792,7 +941,7 @@ Variant Serializable::GetAttribute(const String& name) const
         }
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    ATOMIC_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return ret;
 }
 
@@ -801,12 +950,12 @@ Variant Serializable::GetAttributeDefault(unsigned index) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return Variant::EMPTY;
     }
     if (index >= attributes->Size())
     {
-        LOGERROR("Attribute index out of bounds");
+        ATOMIC_LOGERROR("Attribute index out of bounds");
         return Variant::EMPTY;
     }
 
@@ -824,7 +973,7 @@ Variant Serializable::GetAttributeDefault(const String& name) const
     const Vector<AttributeInfo>* attributes = GetAttributes();
     if (!attributes)
     {
-        LOGERROR(GetTypeName() + " has no attributes");
+        ATOMIC_LOGERROR(GetTypeName() + " has no attributes");
         return Variant::EMPTY;
     }
 
@@ -834,7 +983,7 @@ Variant Serializable::GetAttributeDefault(const String& name) const
             return i->defaultValue_;
     }
 
-    LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
+    ATOMIC_LOGERROR("Could not find attribute " + name + " in " + GetTypeName());
     return Variant::EMPTY;
 }
 

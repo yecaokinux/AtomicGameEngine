@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,8 @@
 namespace Atomic
 {
 
+extern const char* ATOMIC2D_CATEGORY;
+
 ConstraintFriction2D::ConstraintFriction2D(Context* context) :
     Constraint2D(context),
     anchor_(Vector2::ZERO)
@@ -45,13 +47,13 @@ ConstraintFriction2D::~ConstraintFriction2D()
 
 void ConstraintFriction2D::RegisterObject(Context* context)
 {
-    context->RegisterFactory<ConstraintFriction2D>();
+    context->RegisterFactory<ConstraintFriction2D>(ATOMIC2D_CATEGORY);
 
-    ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Anchor", GetAnchor, SetAnchor, Vector2, Vector2::ZERO, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 0.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Max Torque", GetMaxTorque, SetMaxTorque, float, 0.0f, AM_DEFAULT);
-    COPY_BASE_ATTRIBUTES(Constraint2D);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Anchor", GetAnchor, SetAnchor, Vector2, Vector2::ZERO, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 0.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Max Torque", GetMaxTorque, SetMaxTorque, float, 0.0f, AM_DEFAULT);
+    ATOMIC_COPY_BASE_ATTRIBUTES(Constraint2D);
 }
 
 void ConstraintFriction2D::SetAnchor(const Vector2& anchor)
@@ -72,7 +74,11 @@ void ConstraintFriction2D::SetMaxForce(float maxForce)
 
     jointDef_.maxForce = maxForce;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2FrictionJoint*>(joint_)->SetMaxForce(maxForce);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -84,7 +90,11 @@ void ConstraintFriction2D::SetMaxTorque(float maxTorque)
 
     jointDef_.maxTorque = maxTorque;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2FrictionJoint*>(joint_)->SetMaxTorque(maxTorque);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 

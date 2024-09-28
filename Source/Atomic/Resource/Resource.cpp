@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +23,10 @@
 #include "../Precompiled.h"
 
 #include "../Core/Profiler.h"
+#include "../IO/File.h"
 #include "../IO/Log.h"
 #include "../Resource/Resource.h"
+#include "../Resource/XMLElement.h"
 
 namespace Atomic
 {
@@ -40,12 +42,9 @@ bool Resource::Load(Deserializer& source)
 {
     // Because BeginLoad() / EndLoad() can be called from worker threads, where profiling would be a no-op,
     // create a type name -based profile block here
-#ifdef ATOMIC_PROFILING
+#if ATOMIC_PROFILING
     String profileBlockName("Load" + GetTypeName());
-
-    Profiler* profiler = GetSubsystem<Profiler>();
-    if (profiler)
-        profiler->BeginBlock(profileBlockName.CString());
+    ATOMIC_PROFILE_SCOPED(profileBlockName.CString(), PROFILER_COLOR_RESOURCES);
 #endif
 
     // If we are loading synchronously in a non-main thread, behave as if async loading (for example use
@@ -55,11 +54,6 @@ bool Resource::Load(Deserializer& source)
     if (success)
         success &= EndLoad();
     SetAsyncLoadState(ASYNC_DONE);
-
-#ifdef ATOMIC_PROFILING
-    if (profiler)
-        profiler->EndBlock();
-#endif
 
     return success;
 }
@@ -78,8 +72,20 @@ bool Resource::EndLoad()
 
 bool Resource::Save(Serializer& dest) const
 {
-    LOGERROR("Save not supported for " + GetTypeName());
+    ATOMIC_LOGERROR("Save not supported for " + GetTypeName());
     return false;
+}
+
+bool Resource::LoadFile(const String& fileName)
+{
+    File file(context_);
+    return file.Open(fileName, FILE_READ) && Load(file);
+}
+
+bool Resource::SaveFile(const String& fileName) const
+{
+    File file(context_);
+    return file.Open(fileName, FILE_WRITE) && Save(file);
 }
 
 void Resource::SetName(const String& name)
@@ -113,6 +119,68 @@ unsigned Resource::GetUseTimer()
     }
     else
         return useTimer_.GetMSec(false);
+}
+
+void ResourceWithMetadata::AddMetadata(const String& name, const Variant& value)
+{
+    bool exists;
+    metadata_.Insert(MakePair(StringHash(name), value), exists);
+    if (!exists)
+        metadataKeys_.Push(name);
+}
+
+void ResourceWithMetadata::RemoveMetadata(const String& name)
+{
+    metadata_.Erase(name);
+    metadataKeys_.Remove(name);
+}
+
+void ResourceWithMetadata::RemoveAllMetadata()
+{
+    metadata_.Clear();
+    metadataKeys_.Clear();
+}
+
+const Variant& ResourceWithMetadata::GetMetadata(const String& name) const
+{
+    const Variant* value = metadata_[name];
+    return value ? *value : Variant::EMPTY;
+}
+
+bool ResourceWithMetadata::HasMetadata() const
+{
+    return !metadata_.Empty();
+}
+
+void ResourceWithMetadata::LoadMetadataFromXML(const XMLElement& source)
+{
+    for (XMLElement elem = source.GetChild("metadata"); elem; elem = elem.GetNext("metadata"))
+        AddMetadata(elem.GetAttribute("name"), elem.GetVariant());
+}
+
+void ResourceWithMetadata::LoadMetadataFromJSON(const JSONArray& array)
+{
+    for (unsigned i = 0; i < array.Size(); i++)
+    {
+        const JSONValue& value = array.At(i);
+        AddMetadata(value.Get("name").GetString(), value.GetVariant());
+    }
+}
+
+void ResourceWithMetadata::SaveMetadataToXML(XMLElement& destination) const
+{
+    for (unsigned i = 0; i < metadataKeys_.Size(); ++i)
+    {
+        XMLElement elem = destination.CreateChild("metadata");
+        elem.SetString("name", metadataKeys_[i]);
+        elem.SetVariant(GetMetadata(metadataKeys_[i]));
+    }
+}
+
+void ResourceWithMetadata::CopyMetadata(const ResourceWithMetadata& source)
+{
+    metadata_ = source.metadata_;
+    metadataKeys_ = source.metadataKeys_;
 }
 
 }

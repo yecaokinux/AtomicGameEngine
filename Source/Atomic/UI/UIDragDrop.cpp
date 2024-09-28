@@ -52,9 +52,9 @@ namespace Atomic
 
 UIDragDrop::UIDragDrop(Context* context) : Object(context)
 {
-    SubscribeToEvent(E_MOUSEMOVE, HANDLER(UIDragDrop,HandleMouseMove));
-    SubscribeToEvent(E_MOUSEBUTTONUP, HANDLER(UIDragDrop,HandleMouseUp));
-    SubscribeToEvent(E_MOUSEBUTTONDOWN, HANDLER(UIDragDrop,HandleMouseDown));
+    SubscribeToEvent(E_UIUPDATE, ATOMIC_HANDLER(UIDragDrop, HandleUIUpdate));
+    SubscribeToEvent(E_MOUSEMOVE, ATOMIC_HANDLER(UIDragDrop,HandleMouseMove));
+    SubscribeToEvent(E_MOUSEBUTTONUP, ATOMIC_HANDLER(UIDragDrop,HandleMouseUp));    
 
     SharedPtr<UIFontDescription> fd(new UIFontDescription(context));
     fd->SetId("Vera");
@@ -86,13 +86,15 @@ UIDragDrop::~UIDragDrop()
 void UIDragDrop::DragEnd()
 {
     SharedPtr<UIDragObject> dragObject = dragObject_;
-    WeakPtr<UIWidget> currentTargetWidget = currentTargetWidget_;
+    SharedPtr<UIWidget> currentTargetWidget(currentTargetWidget_);
+    SharedPtr<UIWidget> dragSourceWidget(dragSourceWidget_);
+
 
     // clean up
     currentTargetWidget_ = 0;
     dragObject_ = 0;
     dragSourceWidget_ = 0;
-    dragLayout_->SetVisibility(UI_WIDGET_VISIBILITY_GONE);
+    dragLayout_->SetVisibility(UI_WIDGET_VISIBILITY_GONE);    
 
     if (currentTargetWidget.Null())
     {
@@ -105,32 +107,47 @@ void UIDragDrop::DragEnd()
     currentTargetWidget->SendEvent(E_DRAGENDED, dropData);
 }
 
-void UIDragDrop::HandleMouseDown(StringHash eventType, VariantMap& eventData)
+void UIDragDrop::HandleUIUpdate(StringHash eventType, VariantMap& eventData)
 {
-    using namespace MouseButtonDown;
-
     Input* input = GetSubsystem<Input>();
 
-    if (!input->IsMouseVisible())
-        return;
-
-    if ((eventData[P_BUTTONS].GetUInt() & MOUSEB_LEFT) && TBWidget::hovered_widget)
+    if (dragSourceWidget_.NotNull() || !input->IsMouseVisible() || !input->GetMouseButtonDown(MOUSEB_LEFT))
     {
-        // see if we have a widget
-        TBWidget* tbw = TBWidget::hovered_widget;
+        return;
+    }
 
-        while(tbw && !tbw->GetDelegate())
+    if (TBWidget::hovered_widget)
+    {
+        // see if we have a widget with a drag object
+
+        TBWidget* tbw = TBWidget::hovered_widget;
+        UIWidget* widget = nullptr;
+
+        while(tbw)
         {
+            if (tbw->GetDelegate())
+            {
+                widget = (UIWidget*) tbw->GetDelegate();
+
+                if (widget->GetDragObject())
+                {
+                    // TODO: check if we're in widget bounds
+                    // this is going to need to be updated for drag/drop multiselect
+                    break;
+                }
+
+                widget = nullptr;
+            }
+
             tbw = tbw->GetParent();
         }
 
-        if (!tbw)
+        if (!widget)
             return;
-
-        UIWidget* widget = (UIWidget*) tbw->GetDelegate();
 
         currentTargetWidget_ = widget;
         dragSourceWidget_ = widget;
+        mouseDownPosition_ = input->GetMousePosition();
 
     }
 
@@ -156,8 +173,6 @@ void UIDragDrop::HandleMouseUp(StringHash eventType, VariantMap& eventData)
 
 void UIDragDrop::HandleMouseMove(StringHash eventType, VariantMap& eventData)
 {
-    Input* input = GetSubsystem<Input>();
-
     if (dragObject_.Null() && dragSourceWidget_.Null())
         return;
 
@@ -173,6 +188,17 @@ void UIDragDrop::HandleMouseMove(StringHash eventType, VariantMap& eventData)
 
     }
 
+    using namespace MouseMove;
+
+    int x = eventData[P_X].GetInt();
+    int y = eventData[P_Y].GetInt();
+
+    // tolerance to 8 pixels to start drag/drop operation
+    IntVector2 mousePos(x, y);
+    mousePos -= mouseDownPosition_;
+    if (Abs(mousePos.x_) < 8 && Abs(mousePos.y_) < 8)
+        return;
+
     // initialize if necessary
     if (dragLayout_->GetVisibility() == UI_WIDGET_VISIBILITY_GONE)
     {
@@ -184,15 +210,10 @@ void UIDragDrop::HandleMouseMove(StringHash eventType, VariantMap& eventData)
         dragLayout_->SetRect(IntRect(0, 0, sz->GetMinWidth(), sz->GetMinHeight()));
     }
 
-    using namespace MouseMove;
-
-    int x = eventData[P_X].GetInt();
-    int y = eventData[P_Y].GetInt();
-
     // see if we have a widget
     TBWidget* tbw = TBWidget::hovered_widget;
 
-    while(tbw && !tbw->GetDelegate())
+    while(tbw && (!tbw->GetDelegate() || tbw->IsOfType<TBLayout>()))
     {
         tbw = tbw->GetParent();
     }
@@ -231,7 +252,6 @@ void UIDragDrop::HandleMouseMove(StringHash eventType, VariantMap& eventData)
 void UIDragDrop::FileDragEntered()
 {
     dragObject_ = new UIDragObject(context_);
-    //dragObject_->SetText("Files...");
 }
 
 void UIDragDrop::FileDragAddFile(const String& filename)

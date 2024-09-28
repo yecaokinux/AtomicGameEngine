@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,10 @@ namespace Atomic
 class XMLElement;
 class XMLFile;
 
+// ATOMIC BEGIN
+class ScriptRenderPathCommand;
+// ATOMIC END
+
 /// Rendering path command types.
 enum RenderCommandType
 {
@@ -43,7 +47,8 @@ enum RenderCommandType
     CMD_QUAD,
     CMD_FORWARDLIGHTS,
     CMD_LIGHTVOLUMES,
-    CMD_RENDERUI
+    CMD_RENDERUI,
+    CMD_SENDEVENT
 };
 
 /// Rendering path sorting modes.
@@ -62,12 +67,14 @@ enum RenderTargetSizeMode
 };
 
 /// Rendertarget definition.
-struct RenderTargetInfo
+struct ATOMIC_API RenderTargetInfo
 {
     /// Construct.
     RenderTargetInfo() :
         size_(Vector2::ZERO),
         sizeMode_(SIZE_ABSOLUTE),
+        multiSample_(1),
+        autoResolve_(true),
         enabled_(true),
         cubemap_(false),
         filtered_(false),
@@ -89,6 +96,10 @@ struct RenderTargetInfo
     Vector2 size_;
     /// Size mode.
     RenderTargetSizeMode sizeMode_;
+    /// Multisampling level (1 = no multisampling).
+    int multiSample_;
+    /// Multisampling autoresolve flag.
+    bool autoResolve_;
     /// Enabled flag.
     bool enabled_;
     /// Cube map flag.
@@ -102,7 +113,7 @@ struct RenderTargetInfo
 };
 
 /// Rendering path command.
-struct RenderPathCommand
+struct ATOMIC_API RenderPathCommand
 {
     /// Construct.
     RenderPathCommand() :
@@ -199,12 +210,14 @@ struct RenderPathCommand
     bool useLitBase_;
     /// Vertex lights flag.
     bool vertexLights_;
+    /// Event name.
+    String eventName_;
 };
 
-/// Rendering path definition.
+/// Rendering path definition. A sequence of commands (e.g. clear screen, draw objects with specific pass) that yields the scene rendering result.
 class ATOMIC_API RenderPath : public RefCounted
 {
-    REFCOUNTED(RenderPath)
+    ATOMIC_REFCOUNTED(RenderPath)
 
 public:
     /// Construct.
@@ -261,6 +274,13 @@ public:
     Vector<RenderTargetInfo> renderTargets_;
     /// Rendering commands.
     Vector<RenderPathCommand> commands_;
+
+    // ATOMIC BEGIN
+    /// Gets the render command at specified index, note SetCommand must be called to update the RenderPath with any changes
+    bool GetCommand(unsigned index, ScriptRenderPathCommand* dst);
+    /// Sets the render command at specified index
+    bool SetCommand(unsigned index, ScriptRenderPathCommand* src);
+    // ATOMIC END
 };
 
 }

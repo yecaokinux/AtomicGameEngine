@@ -1,17 +1,30 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
 //
-
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
 
 #include <Atomic/Resource/ResourceCache.h>
 #include <Atomic/Resource/XMLFile.h>
 #include <Atomic/Scene/Scene.h>
 #include <Atomic/Scene/PrefabEvents.h>
 #include <Atomic/Scene/PrefabComponent.h>
-#include <Atomic/Atomic2D/AnimatedSprite2D.h>
 #include <Atomic/IO/FileSystem.h>
 
 #include "Asset.h"
@@ -21,9 +34,12 @@
 namespace ToolCore
 {
 
-PrefabImporter::PrefabImporter(Context* context, Asset* asset) : AssetImporter(context, asset)
+PrefabImporter::PrefabImporter(Context* context, Asset* asset) : AssetImporter(context, asset),
+    lastFileStamp_(0xFFFFFFFF)
 {
-    SubscribeToEvent(E_PREFABSAVE, HANDLER(PrefabImporter, HandlePrefabSave));
+    requiresCacheFile_ = true;
+
+    SubscribeToEvent(E_PREFABSAVE, ATOMIC_HANDLER(PrefabImporter, HandlePrefabSave));
 }
 
 PrefabImporter::~PrefabImporter()
@@ -76,17 +92,6 @@ void PrefabImporter::HandlePrefabSave(StringHash eventType, VariantMap& eventDat
         {
             rootComponents[i]->SetTemporary(false);
             tempComponents.Push(rootComponents[i]);
-
-            // Animated sprites contain a temporary node we don't want to save in the prefab
-            // it would be nice if this was general purpose because have to test this when
-            // breaking node as well
-            if (rootComponents[i]->GetType() == AnimatedSprite2D::GetTypeStatic())
-            {
-                AnimatedSprite2D* asprite = (AnimatedSprite2D*) rootComponents[i].Get();
-                if (asprite->GetRootNode())
-                    filterNodes.Push(asprite->GetRootNode());
-            }
-
         }
     }
 
@@ -138,8 +143,33 @@ void PrefabImporter::HandlePrefabSave(StringHash eventType, VariantMap& eventDat
     FileSystem* fs = GetSubsystem<FileSystem>();
     fs->Copy(asset_->GetPath(), asset_->GetCachePath());
 
+    asset_->UpdateFileTimestamp();
+    lastFileStamp_ = asset_->GetFileTimestamp();
+
+    OnPrefabFileChanged();
+
+}
+
+bool PrefabImporter::Import()
+{
+
+    // The asset database will see the file changed, when the file watcher catches it
+    // though we already loaded/imported in OnPrefabFileChanged
+    if (lastFileStamp_ == asset_->GetFileTimestamp())
+        return true;
+
+    FileSystem* fs = GetSubsystem<FileSystem>();
+
+    fs->Copy(asset_->GetPath(), asset_->GetCachePath());
+
+    OnPrefabFileChanged();
+
+    return true;
+}
+
+void PrefabImporter::OnPrefabFileChanged()
+{
     // reload it immediately so it is ready for use
-    // TODO: The resource cache is reloading after this reload due to catching the file cache
     ResourceCache* cache = GetSubsystem<ResourceCache>();
     XMLFile* xmlfile = cache->GetResource<XMLFile>(asset_->GetGUID());
     cache->ReloadResource(xmlfile);
@@ -147,16 +177,6 @@ void PrefabImporter::HandlePrefabSave(StringHash eventType, VariantMap& eventDat
     VariantMap changedData;
     changedData[PrefabChanged::P_GUID] = asset_->GetGUID();
     SendEvent(E_PREFABCHANGED, changedData);
-
-}
-
-bool PrefabImporter::Import()
-{
-    FileSystem* fs = GetSubsystem<FileSystem>();
-
-    fs->Copy(asset_->GetPath(), asset_->GetCachePath());
-
-    return true;
 }
 
 bool PrefabImporter::LoadSettingsInternal(JSONValue& jsonRoot)

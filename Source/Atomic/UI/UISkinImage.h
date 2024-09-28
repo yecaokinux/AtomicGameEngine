@@ -27,9 +27,9 @@
 namespace Atomic
 {
 
-class UISkinImage : public UIWidget
+class ATOMIC_API UISkinImage : public UIWidget
 {
-    OBJECT(UISkinImage)
+    ATOMIC_OBJECT(UISkinImage, UIWidget)
 
 public:
 

@@ -28,9 +28,9 @@
 namespace Atomic
 {
 
-class ATOMIC_API JSEventDispatcher : public Object, public GlobalEventListener
+class JSEventDispatcher : public Object, public GlobalEventListener
 {
-    OBJECT(JSEventDispatcher);
+    ATOMIC_OBJECT(JSEventDispatcher, Object)
 
 public:
     /// Construct.
@@ -49,9 +49,9 @@ private:
 
 };
 
-class ATOMIC_API JSEventHelper : public Object
+class JSEventHelper : public Object
 {
-    OBJECT(JSEventHelper);
+    ATOMIC_OBJECT(JSEventHelper, Object);
 
 public:
     /// Construct.
@@ -61,6 +61,8 @@ public:
 
     void AddEventHandler(StringHash eventType);
     void AddEventHandler(Object* sender, StringHash eventType);
+
+    void Clear();
 
 private:
 

@@ -28,12 +28,15 @@
 #include "UIEvents.h"
 #include "UIEditField.h"
 
+#include "../Atomic/Input/Input.h"
+
 using namespace tb;
 
 namespace Atomic
 {
 
-UIEditField::UIEditField(Context* context, bool createWidget) : UIWidget(context, false)
+UIEditField::UIEditField(Context* context, bool createWidget) : UIWidget(context, false),
+    firstFocusFlag_(false)
 {
     if (createWidget)
     {
@@ -194,6 +197,44 @@ void UIEditField::SetTextAlign(UI_TEXT_ALIGN align)
 
 }
 
+void UIEditField::OnFocusChanged(bool focused)
+{
+    UIWidget::OnFocusChanged(focused);
+
+    if (!widget_)
+        return;
+
+    // safe cast?
+    TBEditField* w = (TBEditField*) widget_;
+
+    TBStyleEdit* styleEdit = w->GetStyleEdit();
+    if (styleEdit != NULL)
+    {
+        if (focused)
+        {
+            if (!w->GetMultiline())
+                styleEdit->selection.SelectAll();
+            firstFocusFlag_ = true;
+
+#if defined(ATOMIC_PLATFORM_ANDROID) || defined(ATOMIC_PLATFORM_IOS)
+
+            // click on field to gain focus and bring up the onscreen keyboard to edit
+            if ( !(w->GetReadOnly() || w->GetState(WIDGET_STATE_DISABLED)) )
+            { 
+                Input* input = GetSubsystem<Input>();
+                input->SetScreenKeyboardVisible(true); 
+            }
+#endif  
+
+        }
+        else
+        {
+            styleEdit->selection.SelectNothing();
+        }
+    }
+
+}
+
 bool UIEditField::OnEvent(const tb::TBWidgetEvent &ev)
 {
     if (ev.type == EVENT_TYPE_CUSTOM && ev.ref_id == TBIDC("edit_complete"))
@@ -202,6 +243,39 @@ bool UIEditField::OnEvent(const tb::TBWidgetEvent &ev)
         eventData[UIWidgetEditComplete::P_WIDGET] = this;
         SendEvent(E_UIWIDGETEDITCOMPLETE, eventData);
         return true;
+    }
+    else if (ev.type == EVENT_TYPE_POINTER_DOWN)
+    {
+        // Select the entire value in the field when it is selected
+        if (widget_ && firstFocusFlag_)
+        {
+            firstFocusFlag_ = false;
+
+            // safe cast?
+            TBEditField* w = (TBEditField*) widget_;
+
+            TBStyleEdit* styleEdit = w->GetStyleEdit();
+            if (styleEdit != NULL && !w->GetMultiline())
+            {
+                styleEdit->selection.SelectAll();
+            }
+        }
+
+#if defined(ATOMIC_PLATFORM_ANDROID) || defined(ATOMIC_PLATFORM_IOS)
+
+        // triple click to get the onscreen keyboard, in case it is auto-focused
+        else if ( ev.count == 3 ) 
+        {
+            TBEditField* w = (TBEditField*) widget_;
+            if ( !(w->GetReadOnly() || w->GetState(WIDGET_STATE_DISABLED)) )
+            { 
+                Input* input = GetSubsystem<Input>();
+                input->SetScreenKeyboardVisible(true); 
+            }
+        }
+
+#endif
+
     }
 
     return UIWidget::OnEvent(ev);

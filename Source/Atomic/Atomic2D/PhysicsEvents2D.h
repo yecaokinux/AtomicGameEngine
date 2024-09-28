@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,41 +24,85 @@
 
 #include "../Core/Object.h"
 
+// For prestep / poststep events, which are the same for 2D and 3D physics. The events themselves don't depend
+// on whether 3D physics support or Bullet has been compiled in.
+#include "../Physics/PhysicsEvents.h"
+
 namespace Atomic
 {
 
-/// Physics world is about to be stepped.
-EVENT(E_PHYSICSPRESTEP2D, PhysicsPreStep2D)
+/// Physics update contact. Global event sent by PhysicsWorld2D.
+ATOMIC_EVENT(E_PHYSICSUPDATECONTACT2D, PhysicsUpdateContact2D)
 {
-    PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
-    PARAM(P_TIMESTEP, TimeStep);            // float
+    ATOMIC_PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
+    ATOMIC_PARAM(P_BODYA, BodyA);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_BODYB, BodyB);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_NODEA, NodeA);                  // Node pointer
+    ATOMIC_PARAM(P_NODEB, NodeB);                  // Node pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPEA, ShapeA);                // CollisionShape2D pointer
+    ATOMIC_PARAM(P_SHAPEB, ShapeB);                // CollisionShape2D pointer
+    ATOMIC_PARAM(P_ENABLED, Enabled);              // bool [in/out]
 }
 
-/// Physics world has been stepped.
-EVENT(E_PHYSICSPOSTSTEP2D, PhysicsPostStep2D)
+/// Physics begin contact. Global event sent by PhysicsWorld2D.
+ATOMIC_EVENT(E_PHYSICSBEGINCONTACT2D, PhysicsBeginContact2D)
 {
-    PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
-    PARAM(P_TIMESTEP, TimeStep);            // float
+    ATOMIC_PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
+    ATOMIC_PARAM(P_BODYA, BodyA);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_BODYB, BodyB);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_NODEA, NodeA);                  // Node pointer
+    ATOMIC_PARAM(P_NODEB, NodeB);                  // Node pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPEA, ShapeA);                // CollisionShape2D pointer
+    ATOMIC_PARAM(P_SHAPEB, ShapeB);                // CollisionShape2D pointer
 }
 
-/// Physics begin contact.
-EVENT(E_PHYSICSBEGINCONTACT2D, PhysicsBeginContact2D)
+/// Physics end contact. Global event sent by PhysicsWorld2D.
+ATOMIC_EVENT(E_PHYSICSENDCONTACT2D, PhysicsEndContact2D)
 {
-    PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
-    PARAM(P_BODYA, BodyA);                  // RigidBody2D pointer
-    PARAM(P_BODYB, BodyB);                  // RigidBody2D pointer
-    PARAM(P_NODEA, NodeA);                  // Node pointer
-    PARAM(P_NODEB, NodeB);                  // Node pointer
+    ATOMIC_PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
+    ATOMIC_PARAM(P_BODYA, BodyA);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_BODYB, BodyB);                  // RigidBody2D pointer
+    ATOMIC_PARAM(P_NODEA, NodeA);                  // Node pointer
+    ATOMIC_PARAM(P_NODEB, NodeB);                  // Node pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPEA, ShapeA);                // CollisionShape2D pointer
+    ATOMIC_PARAM(P_SHAPEB, ShapeB);                // CollisionShape2D pointer
 }
 
-/// Physics end contact.
-EVENT(E_PHYSICSENDCONTACT2D, PhysicsEndContact2D)
+/// Node update contact. Sent by scene nodes participating in a collision.
+ATOMIC_EVENT(E_NODEUPDATECONTACT2D, NodeUpdateContact2D)
 {
-    PARAM(P_WORLD, World);                  // PhysicsWorld2D pointer
-    PARAM(P_BODYA, BodyA);                  // RigidBody2D pointer
-    PARAM(P_BODYB, BodyB);                  // RigidBody2D pointer
-    PARAM(P_NODEA, NodeA);                  // Node pointer
-    PARAM(P_NODEB, NodeB);                  // Node pointer
+    ATOMIC_PARAM(P_BODY, Body);                    // RigidBody2D pointer
+    ATOMIC_PARAM(P_OTHERNODE, OtherNode);          // Node pointer
+    ATOMIC_PARAM(P_OTHERBODY, OtherBody);          // RigidBody2D pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPE, Shape);                  // CollisionShape2D pointer
+    ATOMIC_PARAM(P_OTHERSHAPE, OtherShape);        // CollisionShape2D pointer
+    ATOMIC_PARAM(P_ENABLED, Enabled);              // bool [in/out]
+}
+
+/// Node begin contact. Sent by scene nodes participating in a collision.
+ATOMIC_EVENT(E_NODEBEGINCONTACT2D, NodeBeginContact2D)
+{
+    ATOMIC_PARAM(P_BODY, Body);                    // RigidBody2D pointer
+    ATOMIC_PARAM(P_OTHERNODE, OtherNode);          // Node pointer
+    ATOMIC_PARAM(P_OTHERBODY, OtherBody);          // RigidBody2D pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPE, Shape);                  // CollisionShape2D pointer
+    ATOMIC_PARAM(P_OTHERSHAPE, OtherShape);        // CollisionShape2D pointer
+}
+
+/// Node end contact. Sent by scene nodes participating in a collision.
+ATOMIC_EVENT(E_NODEENDCONTACT2D, NodeEndContact2D)
+{
+    ATOMIC_PARAM(P_BODY, Body);                    // RigidBody2D pointer
+    ATOMIC_PARAM(P_OTHERNODE, OtherNode);          // Node pointer
+    ATOMIC_PARAM(P_OTHERBODY, OtherBody);          // RigidBody2D pointer
+    ATOMIC_PARAM(P_CONTACTS, Contacts);            // Buffer containing position (Vector2), normal (Vector2), negative overlap distance (float). Normal is the same for all points.
+    ATOMIC_PARAM(P_SHAPE, Shape);                  // CollisionShape2D pointer
+    ATOMIC_PARAM(P_OTHERSHAPE, OtherShape);        // CollisionShape2D pointer
 }
 
 }

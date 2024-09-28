@@ -1,12 +1,26 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 import EditorUI = require("./EditorUI");
-import EditorEvents = require("../editor/EditorEvents");
 
 class MainToolbar extends Atomic.UIWidget {
 
@@ -15,6 +29,8 @@ class MainToolbar extends Atomic.UIWidget {
     scaleButton: Atomic.UIButton;
     axisButton: Atomic.UIButton;
     playButton: Atomic.UIButton;
+    pauseButton: Atomic.UIButton;
+    stepButton: Atomic.UIButton;
 
     constructor(parent: Atomic.UIWidget) {
 
@@ -30,23 +46,50 @@ class MainToolbar extends Atomic.UIWidget {
 
         this.playButton = <Atomic.UIButton>this.getWidget("maintoolbar_play");
 
+        this.pauseButton = <Atomic.UIButton>this.getWidget("maintoolbar_pause");
+
+        this.stepButton = <Atomic.UIButton>this.getWidget("maintoolbar_step");
+
         this.translateButton.value = 1;
 
         parent.addChild(this);
 
-        this.subscribeToEvent("GizmoAxisModeChanged", (ev) => this.handleGizmoAxisModeChanged(ev));
-        this.subscribeToEvent("GizmoEditModeChanged", (ev) => this.handleGizmoEditModeChanged(ev));
+        this.subscribeToEvent(Editor.GizmoAxisModeChangedEvent((ev) => this.handleGizmoAxisModeChanged(ev)));
+        this.subscribeToEvent(Editor.GizmoEditModeChangedEvent((ev) => this.handleGizmoEditModeChanged(ev)));
 
-        this.subscribeToEvent(this, "WidgetEvent", (data) => this.handleWidgetEvent(data));
+        this.subscribeToEvent(this, Atomic.UIWidgetEvent((data) => this.handleWidgetEvent(data)));
 
-        this.subscribeToEvent(EditorEvents.PlayerStarted, (data) => {
+        this.subscribeToEvent(Editor.EditorPlayerStartedEvent(() => {
             var skin = <Atomic.UISkinImage> this.playButton.getWidget("skin_image");
             skin.setSkinBg("StopButton");
-        });
-        this.subscribeToEvent(EditorEvents.PlayerStopped, (data) => {
+            skin = <Atomic.UISkinImage> this.pauseButton.getWidget("skin_image");
+            skin.setSkinBg("PauseButton");
+        }));
+        this.subscribeToEvent(Editor.EditorPlayerStoppedEvent(() => {
             var skin = <Atomic.UISkinImage> this.playButton.getWidget("skin_image");
             skin.setSkinBg("PlayButton");
-        });
+            skin = <Atomic.UISkinImage> this.pauseButton.getWidget("skin_image");
+            skin.setSkinBg("PauseButton");
+        }));
+        this.subscribeToEvent(Editor.EditorPlayerPausedEvent(() => {
+            var skin = <Atomic.UISkinImage> this.pauseButton.getWidget("skin_image");
+            skin.setSkinBg("PlayButton");
+        }));
+
+        this.subscribeToEvent(Editor.EditorPlayerResumedEvent(() => {
+            var skin = <Atomic.UISkinImage> this.pauseButton.getWidget("skin_image");
+            skin.setSkinBg("PauseButton");
+        }));
+
+        // TODO: We need better control over playmode during NET compiles
+        this.subscribeToEvent(ToolCore.NETBuildBeginEvent((data) => {
+            this.playButton.disable();
+        }));
+
+        this.subscribeToEvent(ToolCore.NETBuildResultEvent((data) => {
+            this.playButton.enable();
+        }));
+
     }
 
     handleGizmoAxisModeChanged(ev: Editor.GizmoAxisModeChangedEvent) {
@@ -81,7 +124,7 @@ class MainToolbar extends Atomic.UIWidget {
 
     handleWidgetEvent(ev: Atomic.UIWidgetEvent) {
 
-        if (ev.type == Atomic.UI_EVENT_TYPE_CLICK && ev.target) {
+        if (ev.type == Atomic.UI_EVENT_TYPE.UI_EVENT_TYPE_CLICK && ev.target) {
 
             if (ev.target.id == "3d_translate" || ev.target.id == "3d_rotate" || ev.target.id == "3d_scale") {
 
@@ -91,7 +134,7 @@ class MainToolbar extends Atomic.UIWidget {
                 else if (ev.target.id == "3d_scale")
                     mode = 3;
 
-                this.sendEvent("GizmoEditModeChanged", { mode: mode });
+                this.sendEvent(Editor.GizmoEditModeChangedEventData({ mode: mode }));
 
                 return true;
 
@@ -102,6 +145,14 @@ class MainToolbar extends Atomic.UIWidget {
 
             } else if (ev.target.id == "maintoolbar_play") {
                 EditorUI.getShortcuts().invokePlayOrStopPlayer();
+                return true;
+
+            } else if (ev.target.id == "maintoolbar_pause") {
+                EditorUI.getShortcuts().invokePauseOrResumePlayer();
+                return true;
+
+            } else if (ev.target.id == "maintoolbar_step") {
+                EditorUI.getShortcuts().invokeStepPausedPlayer();
                 return true;
             }
 

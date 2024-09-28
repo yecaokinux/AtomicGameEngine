@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Atomic.h>
@@ -19,7 +34,7 @@
 namespace ToolCore
 {
 
-    String JSBHaxe::GetScriptType(JSBFunctionType* ftype)
+    String JSBHaxe::GetScriptType(const JSBFunctionType* ftype)
     {
         String scriptType = "Dynamic";
 
@@ -99,11 +114,11 @@ namespace ToolCore
         source_ += "\n}\n";
     }
 
-    bool JSBHaxe::IsOverride(JSBFunction* function) {
-        return findFunctionInBase(function);
+    bool JSBHaxe::IsOverride(const JSBFunction* function) {
+        return findFunctionInBase(function) != NULL;
     }
 
-    JSBFunction* JSBHaxe::findFunctionInBase(JSBFunction* function) {
+    JSBFunction* JSBHaxe::findFunctionInBase(const JSBFunction* function) {
         PODVector<JSBClass*>& base = function->GetClass()->GetBaseClasses();
         for (unsigned j = 0; j < base.Size(); j++)
         {
@@ -127,7 +142,7 @@ namespace ToolCore
         return NULL;
     }
 
-    void JSBHaxe::ExportFunction(JSBFunction* function)
+    void JSBHaxe::ExportFunction(const JSBFunction* function)
     {
         //probably no need to check
         if (function->Skip())
@@ -150,7 +165,7 @@ namespace ToolCore
             //if (function->IsOverload())
             {
                 source_ += "    @:overload(function(";
-                Vector<JSBFunctionType*>& parameters = function->GetParameters();
+                const Vector<JSBFunctionType*>& parameters = function->GetParameters();
 
                 for (unsigned i = 0; i < parameters.Size(); i++)
                 {
@@ -187,7 +202,7 @@ namespace ToolCore
 
         source_ += scriptName + "(";
 
-        Vector<JSBFunctionType*>& parameters = function->GetParameters();
+        Vector<JSBFunctionType*> parameters = function->GetParameters();
 
         if (IsOverride(function))
             parameters = findFunctionInBase(function)->GetParameters();
@@ -331,7 +346,7 @@ namespace ToolCore
             if (propertyNames.Size())
                 source_ += "\n";
 
-            JSBFunction* constructor = klass->GetConstructor();
+            JSBFunction* constructor = klass->GetConstructor(BINDINGLANGUAGE_JAVASCRIPT);
             if (constructor)
             {
                 ExportFunction(constructor);

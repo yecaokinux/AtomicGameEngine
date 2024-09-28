@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <stdint.h>
@@ -19,11 +34,11 @@
 
 #include <Atomic/Graphics/Octree.h>
 #include <Atomic/Graphics/Zone.h>
-#include <Atomic/Atomic3D/AnimatedModel.h>
-#include <Atomic/Atomic3D/StaticModel.h>
-#include <Atomic/Atomic3D/LMStaticModel.h>
-#include <Atomic/Atomic3D/Terrain.h>
-#include <Atomic/Atomic3D/Animation.h>
+#include <Atomic/Graphics/AnimatedModel.h>
+#include <Atomic/Graphics/StaticModel.h>
+#include <Atomic/Graphics/LMStaticModel.h>
+#include <Atomic/Graphics/Terrain.h>
+#include <Atomic/Graphics/Animation.h>
 #include <Atomic/Graphics/DebugRenderer.h>
 #include <Atomic/Physics/CollisionShape.h>
 #include <Atomic/Physics/RigidBody.h>
@@ -398,7 +413,7 @@ bool JSONSceneProcess::ProcessModels()
             geometry.Push(geom);
 
             geom->SetIndexBuffer(ib);
-            geom->SetVertexBuffer(0, vb, vertexElementMask);
+            geom->SetVertexBuffer(0, vb);
             geom->SetDrawRange(TRIANGLE_LIST, start, submesh.Size(), false);
 
             start += submesh.Size();
@@ -570,7 +585,7 @@ bool JSONSceneProcess::ProcessComponent(Node* node, const JSONMeshCollider* jmes
 
     if (!model || !model->GetModel())
     {
-        LOGWARNING("Missing model for MeshCollier");
+        ATOMIC_LOGWARNING("Missing model for MeshCollier");
         return true;
     }
 

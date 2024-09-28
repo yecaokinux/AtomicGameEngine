@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,12 @@
 
 #include "../DebugNew.h"
 
+// ATOMIC BEGIN
+
+#include "../Container/HashMap.h"
+
+// ATOMIC END
+
 namespace Atomic
 {
 
@@ -37,20 +43,24 @@ const StringHash StringHash::ZERO;
 StringHash::StringHash(const char* str) :
     value_(Calculate(str))
 {
+#if ATOMIC_PROFILING
+    RegisterSignificantString(str, *this);
+#endif
 }
 
 StringHash::StringHash(const String& str) :
     value_(Calculate(str.CString()))
 {
+#if ATOMIC_PROFILING
+    RegisterSignificantString(str, *this);
+#endif
 }
-
-unsigned StringHash::Calculate(const char* str)
+// ATOMIC BEGIN
+unsigned StringHash::Calculate(const char* str, unsigned hash)
 {
-    unsigned hash = 0;
-
     if (!str)
         return hash;
-
+// ATOMIC END
     while (*str)
     {
         // Perform the actual hashing as case-insensitive
@@ -68,5 +78,54 @@ String StringHash::ToString() const
     sprintf(tempBuffer, "%08X", value_);
     return String(tempBuffer);
 }
+
+// ATOMIC BEGIN
+
+// Lookup for significant strings, not a member of StringHash so don't need to drag hashmap into header
+static HashMap<StringHash, String>* gSignificantLookup = 0;
+
+StringHash StringHash::RegisterSignificantString(const String& str)
+{
+    StringHash hash(str.CString());
+    RegisterSignificantString(str.CString(), hash);
+    return hash;
+}
+
+void StringHash::RegisterSignificantString(const char* str, StringHash hash)
+{
+    if (!gSignificantLookup)
+        gSignificantLookup = new HashMap<StringHash, String>();
+
+    if (gSignificantLookup->Contains(hash))
+        return;
+
+    (*gSignificantLookup)[hash] = str;
+}
+
+StringHash StringHash::RegisterSignificantString(const char* str)
+{
+    StringHash hash(str);
+    RegisterSignificantString(str, hash);
+    return hash;
+}
+
+void StringHash::RegisterSignificantString(const String& str, StringHash hash)
+{
+    RegisterSignificantString(str.CString(), hash);
+}
+
+bool StringHash::GetSignificantString(StringHash hash, String& strOut)
+{
+    if (!gSignificantLookup || !gSignificantLookup->TryGetValue(hash, strOut))
+    {
+        strOut.Clear();
+        return false;
+    }
+
+    return true;
+}
+
+// ATOMIC END
+
 
 }

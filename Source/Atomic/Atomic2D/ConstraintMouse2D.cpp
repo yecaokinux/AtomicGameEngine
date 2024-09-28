@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,10 +32,11 @@
 namespace Atomic
 {
 
+extern const char* ATOMIC2D_CATEGORY;
+
 ConstraintMouse2D::ConstraintMouse2D(Context* context) :
     Constraint2D(context),
-    target_(Vector2::ZERO),
-    targetSetted_(false)
+    target_(Vector2::ZERO)
 {
 }
 
@@ -45,14 +46,14 @@ ConstraintMouse2D::~ConstraintMouse2D()
 
 void ConstraintMouse2D::RegisterObject(Context* context)
 {
-    context->RegisterFactory<ConstraintMouse2D>();
+    context->RegisterFactory<ConstraintMouse2D>(ATOMIC2D_CATEGORY);
 
-    ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Target", GetTarget, SetTarget, Vector2, Vector2::ZERO, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 0.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Frequency Hz", GetFrequencyHz, SetFrequencyHz, float, 5.0f, AM_DEFAULT);
-    ACCESSOR_ATTRIBUTE("Damping Ratio", GetDampingRatio, SetDampingRatio, float, 0.7f, AM_DEFAULT);
-    COPY_BASE_ATTRIBUTES(Constraint2D);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Is Enabled", IsEnabled, SetEnabled, bool, true, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Target", GetTarget, SetTarget, Vector2, Vector2::ZERO, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Max Force", GetMaxForce, SetMaxForce, float, 0.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Frequency Hz", GetFrequencyHz, SetFrequencyHz, float, 5.0f, AM_DEFAULT);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Damping Ratio", GetDampingRatio, SetDampingRatio, float, 0.7f, AM_DEFAULT);
+    ATOMIC_COPY_BASE_ATTRIBUTES(Constraint2D);
 }
 
 void ConstraintMouse2D::SetTarget(const Vector2& target)
@@ -61,18 +62,12 @@ void ConstraintMouse2D::SetTarget(const Vector2& target)
         return;
 
     target_ = target;
-    if (joint_ && targetSetted_)
-    {
-        b2MouseJoint* mouseJoint = (b2MouseJoint*)joint_;
-        mouseJoint->SetTarget(ToB2Vec2(target_));
 
-        MarkNetworkUpdate();
-        return;
-    }
+    if (joint_)
+        static_cast<b2MouseJoint*>(joint_)->SetTarget(ToB2Vec2(target));
+    else
+        RecreateJoint();
 
-    targetSetted_ = true;
-
-    RecreateJoint();
     MarkNetworkUpdate();
 }
 
@@ -83,7 +78,11 @@ void ConstraintMouse2D::SetMaxForce(float maxForce)
 
     jointDef_.maxForce = maxForce;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MouseJoint*>(joint_)->SetMaxForce(maxForce);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -94,7 +93,11 @@ void ConstraintMouse2D::SetFrequencyHz(float frequencyHz)
 
     jointDef_.frequencyHz = frequencyHz;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MouseJoint*>(joint_)->SetFrequency(frequencyHz);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -105,7 +108,11 @@ void ConstraintMouse2D::SetDampingRatio(float dampingRatio)
 
     jointDef_.dampingRatio = dampingRatio;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2MouseJoint*>(joint_)->SetDampingRatio(dampingRatio);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 

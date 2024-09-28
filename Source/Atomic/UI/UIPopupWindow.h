@@ -27,9 +27,9 @@
 namespace Atomic
 {
 
-class UIPopupWindow: public UIWidget
+class ATOMIC_API UIPopupWindow: public UIWidget
 {
-    OBJECT(UIPopupWindow)
+    ATOMIC_OBJECT(UIPopupWindow, UIWidget)
 
 public:
 

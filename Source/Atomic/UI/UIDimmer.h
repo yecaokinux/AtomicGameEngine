@@ -27,9 +27,9 @@
 namespace Atomic
 {
 
-class UIDimmer : public UIWidget
+class ATOMIC_API UIDimmer : public UIWidget
 {
-    OBJECT(UIDimmer)
+    ATOMIC_OBJECT(UIDimmer, UIWidget)
 
 public:
 

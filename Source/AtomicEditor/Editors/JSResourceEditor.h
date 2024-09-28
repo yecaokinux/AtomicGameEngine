@@ -1,42 +1,59 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
 
 #include "ResourceEditor.h"
-#include <TurboBadger/tb_editfield.h>
-#include <TurboBadger/tb_style_edit.h>
-#include <TurboBadger/tb_select.h>
 
 using namespace Atomic;
 using namespace tb;
 
+namespace Atomic
+{
+    class UIWebView;
+    class WebClient;
+    class WebMessageHandler;
+}
+
 namespace AtomicEditor
 {
 
-class JSAutocomplete; 
-
-class JSResourceEditor: public ResourceEditor, public TBStyleEditTextChangeListener
+class JSResourceEditor: public ResourceEditor
 {
-    OBJECT(JSResourceEditor);
+    ATOMIC_OBJECT(JSResourceEditor, ResourceEditor);
 
 public:
 
-    JSResourceEditor(Context* context, const String& fullpath, UITabContainer* container);
+    JSResourceEditor(Context* context, const String& fullpath, UITabContainer* container, const String& editorUrl);
 
     virtual ~JSResourceEditor();
+
+    /// Get the editor's UIWebView
+    UIWebView* GetWebView() const { return webView_; }
 
     bool OnEvent(const TBWidgetEvent &ev);
 
     bool FindText(const String& findText, unsigned flags);
     void FindTextClose();
-
-    void OnChange(TBStyleEdit* styleEdit);
-    void HandleUpdate(StringHash eventType, VariantMap& eventData);
 
     void GotoTokenPos(int tokenPos);
     void GotoLineNumber(int lineNumber);
@@ -49,21 +66,18 @@ public:
 
 private:
 
-    bool ParseJavascriptToJSON(const char* source, String& json, bool loose = true);
+    void HandleWebViewLoadEnd(StringHash eventType, VariantMap& eventData);
+    void HandleWebMessage(StringHash eventType, VariantMap& eventData);
+
     bool BeautifyJavascript(const char* source, String& output);
-    void UpdateLineNumbers();
 
-    tb::TBStyleEdit* styleEdit_;
-    tb::TBSelectList* lineNumberList_;
+    void HandleRenameResourceNotification(StringHash eventType, VariantMap& eventData);
+    void HandleDeleteResourceNotification(StringHash eventType, VariantMap& eventData);
+    void HandleProjectUnloadedNotification(StringHash eventType, VariantMap& eventData);
 
-    TBEditField* editField_;
-    JSAutocomplete* autocomplete_;
-
-    float textDelta_;
-    bool textDirty_;
-
-    int currentFindPos_;
-
+    SharedPtr<UIWebView> webView_;
+    WeakPtr<WebClient> webClient_;
+    WeakPtr<WebMessageHandler> messageHandler_;
 };
 
 }

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,9 @@
 
 #pragma once
 
+#include "../Container/HashSet.h"
 #include "../Core/Attribute.h"
 #include "../Core/Object.h"
-#include "../Container/HashSet.h"
-#include "../Resource/XMLElement.h"
 
 namespace Atomic
 {
@@ -41,12 +40,46 @@ public:
 
 // ATOMIC END
 
-/// Atomic execution context. Provides access to subsystems, object factories and attributes, and event receivers.
+/// Tracking structure for event receivers.
+class ATOMIC_API EventReceiverGroup : public RefCounted
+{
+    ATOMIC_REFCOUNTED(EventReceiverGroup);
+public:
+    /// Construct.
+    EventReceiverGroup() :
+        inSend_(0),
+        dirty_(false)
+    {
+    }
+
+    /// Begin event send. When receivers are removed during send, group has to be cleaned up afterward.
+    void BeginSendEvent();
+
+    /// End event send. Clean up if necessary.
+    void EndSendEvent();
+
+    /// Add receiver. Same receiver must not be double-added!
+    void Add(Object* object);
+
+    /// Remove receiver. Leave holes during send, which requires later cleanup.
+    void Remove(Object* object);
+
+    /// Receivers. May contain holes during sending.
+    PODVector<Object*> receivers_;
+
+private:
+    /// "In send" recursion counter.
+    unsigned inSend_;
+    /// Cleanup required flag.
+    bool dirty_;
+};
+
+/// Urho3D execution context. Provides access to subsystems, object factories and attributes, and event receivers.
 class ATOMIC_API Context : public RefCounted
 {
     friend class Object;
 
-    REFCOUNTED(Context)
+    ATOMIC_REFCOUNTED(Context)
 
 public:
     /// Construct.
@@ -54,8 +87,18 @@ public:
     /// Destruct.
     ~Context();
 
+    /// Create an object by type. Return pointer to it or null if no factory found.
+    template <class T> inline SharedPtr<T> CreateObject()
+    {
+        return StaticCast<T>(CreateObject(T::GetTypeStatic()));
+    }
+
+    // ATOMIC BEGIN
     /// Create an object by type hash. Return pointer to it or null if no factory found.
     SharedPtr<Object> CreateObject(StringHash objectType, const XMLElement &source = XMLElement::EMPTY);
+    // ATOMIC END
+
+
     /// Register a factory for an object type.
     void RegisterFactory(ObjectFactory* factory);
     /// Register a factory for an object type and specify the object category.
@@ -72,6 +115,16 @@ public:
     void UpdateAttributeDefaultValue(StringHash objectType, const char* name, const Variant& defaultValue);
     /// Return a preallocated map for event data. Used for optimization to avoid constant re-allocation of event data maps.
     VariantMap& GetEventDataMap();
+    /// Initialises the specified SDL systems, if not already. Returns true if successful. This call must be matched with ReleaseSDL() when SDL functions are no longer required, even if this call fails.
+    bool RequireSDL(unsigned int sdlFlags);
+    /// Indicate that you are done with using SDL. Must be called after using RequireSDL().
+    void ReleaseSDL();
+#ifdef ATOMIC_IK
+    /// Initialises the IK library, if not already. This call must be matched with ReleaseIK() when the IK library is no longer required.
+    void RequireIK();
+    /// Indicate that you are done with using the IK library.
+    void ReleaseIK();
+#endif
 
     /// Copy base class attributes to derived class.
     void CopyBaseAttributes(StringHash baseType, StringHash derivedType);
@@ -92,6 +145,15 @@ public:
 
     /// Return subsystem by type.
     Object* GetSubsystem(StringHash type) const;
+
+    /// Return global variable based on key
+    const Variant& GetGlobalVar(StringHash key) const ;
+
+    /// Return all global variables.
+    const VariantMap& GetGlobalVars() const { return globalVars_; }
+
+    /// Set global variable with the respective key and value
+    void SetGlobalVar(StringHash key, const Variant& value);
 
     /// Return all subsystems.
     const HashMap<StringHash, SharedPtr<Object> >& GetSubsystems() const { return subsystems_; }
@@ -116,8 +178,6 @@ public:
     template <class T> T* GetSubsystem() const;
     /// Template version of returning a specific attribute description.
     template <class T> AttributeInfo* GetAttribute(const char* name);
-    /// Get whether an Editor Context
-    bool GetEditorContext() { return editorContext_; }
 
     /// Return attribute descriptions for an object type, or null if none defined.
     const Vector<AttributeInfo>* GetAttributes(StringHash type) const
@@ -137,33 +197,58 @@ public:
     const HashMap<StringHash, Vector<AttributeInfo> >& GetAllAttributes() const { return attributes_; }
 
     /// Return event receivers for a sender and event type, or null if they do not exist.
-    HashSet<Object*>* GetEventReceivers(Object* sender, StringHash eventType)
+    EventReceiverGroup* GetEventReceivers(Object* sender, StringHash eventType)
     {
-        HashMap<Object*, HashMap<StringHash, HashSet<Object*> > >::Iterator i = specificEventReceivers_.Find(sender);
+        HashMap<Object*, HashMap<StringHash, SharedPtr<EventReceiverGroup> > >::Iterator i = specificEventReceivers_.Find(sender);
         if (i != specificEventReceivers_.End())
         {
-            HashMap<StringHash, HashSet<Object*> >::Iterator j = i->second_.Find(eventType);
-            return j != i->second_.End() ? &j->second_ : 0;
+            HashMap<StringHash, SharedPtr<EventReceiverGroup> >::Iterator j = i->second_.Find(eventType);
+            return j != i->second_.End() ? j->second_ : (EventReceiverGroup*)0;
         }
         else
             return 0;
     }
 
     /// Return event receivers for an event type, or null if they do not exist.
-    HashSet<Object*>* GetEventReceivers(StringHash eventType)
+    EventReceiverGroup* GetEventReceivers(StringHash eventType)
     {
-        HashMap<StringHash, HashSet<Object*> >::Iterator i = eventReceivers_.Find(eventType);
-        return i != eventReceivers_.End() ? &i->second_ : 0;
+        HashMap<StringHash, SharedPtr<EventReceiverGroup> >::Iterator i = eventReceivers_.Find(eventType);
+        return i != eventReceivers_.End() ? i->second_ : (EventReceiverGroup*)0;
     }
 
     // ATOMIC BEGIN
+
+    /// Get whether an Editor Context
+    bool GetEditorContext() { return editorContext_; }
+
+    /// Get whether an Editor Context
+    void SetEditorContext(bool editor) { editorContext_ = editor; }
 
     // hook for listening into events
     void AddGlobalEventListener(GlobalEventListener* listener) { globalEventListeners_.Push(listener); }
     void RemoveGlobalEventListener(GlobalEventListener* listener) { globalEventListeners_.Erase(globalEventListeners_.Find(listener)); }
 
-    /// Get whether an Editor Context
-    void SetEditorContext(bool editor) { editorContext_ = editor; }
+    Engine* GetEngine() const { return engine_; }
+    Time* GetTime() const { return time_; }
+    WorkQueue* GetWorkQueue() const { return workQueue_; }
+    Profiler* GetProfiler() const { return profiler_; }
+    FileSystem* GetFileSystem() const { return fileSystem_; }
+    Log* GetLog() const { return log_; }
+    ResourceCache* GetResourceCache() const { return cache_; }
+    Localization* GetLocalization() const { return l18n_; }
+    Network* GetNetwork() const { return network_; }
+    Web* GetWeb() const { return web_; }
+    Database* GetDatabase() const { return db_; }
+    Input* GetInput() const { return input_; }
+    Audio* GetAudio() const { return audio_; }
+    UI* GetUI() const { return ui_; }
+    SystemUI* GetSystemUI() const { return systemUi_; }
+    Graphics* GetGraphics() const { return graphics_; }
+    Renderer* GetRenderer() const { return renderer_; }
+    Console* GetConsole() const { return console_; }
+    DebugHud* GetDebugHud() const { return debugHud_; }
+    Metrics* GetMetrics() const { return metrics_; }
+
     // ATOMIC END
 
 private:
@@ -177,23 +262,13 @@ private:
     void RemoveEventReceiver(Object* receiver, Object* sender, StringHash eventType);
     /// Remove event receiver from non-specific events.
     void RemoveEventReceiver(Object* receiver, StringHash eventType);
+    /// Begin event send.
+    void BeginSendEvent(Object* sender, StringHash eventType);
+    /// End event send. Clean up event receivers removed in the meanwhile.
+    void EndSendEvent();
 
     /// Set current event handler. Called by Object.
     void SetEventHandler(EventHandler* handler) { eventHandler_ = handler; }
-
-    /// Begin event send.
-    void BeginSendEvent(Object* sender, StringHash eventType, VariantMap& eventData) {
-        for (unsigned i = 0; i < globalEventListeners_.Size(); i++)
-            globalEventListeners_[i]->BeginSendEvent(this, sender, eventType, eventData);
-        eventSenders_.Push(sender);
-    }
-
-    /// End event send. Clean up event receivers removed in the meanwhile.
-    void EndSendEvent(Object* sender, StringHash eventType, VariantMap& eventData) {
-        for (unsigned i = 0; i < globalEventListeners_.Size(); i++)
-            globalEventListeners_[i]->EndSendEvent(this, sender, eventType, eventData);
-        eventSenders_.Pop();
-    }
 
     /// Object factories.
     HashMap<StringHash, SharedPtr<ObjectFactory> > factories_;
@@ -204,9 +279,9 @@ private:
     /// Network replication attribute descriptions per object type.
     HashMap<StringHash, Vector<AttributeInfo> > networkAttributes_;
     /// Event receivers for non-specific events.
-    HashMap<StringHash, HashSet<Object*> > eventReceivers_;
+    HashMap<StringHash, SharedPtr<EventReceiverGroup> > eventReceivers_;
     /// Event receivers for specific senders' events.
-    HashMap<Object*, HashMap<StringHash, HashSet<Object*> > > specificEventReceivers_;
+    HashMap<Object*, HashMap<StringHash, SharedPtr<EventReceiverGroup> > > specificEventReceivers_;
     /// Event sender stack.
     PODVector<Object*> eventSenders_;
     /// Event data stack.
@@ -215,11 +290,53 @@ private:
     EventHandler* eventHandler_;
     /// Object categories.
     HashMap<String, Vector<StringHash> > objectCategories_;
+    /// Variant map for global variables that can persist throughout application execution.
+    VariantMap globalVars_;
 
     // ATOMIC BEGIN
+
+    /// Begin event send.
+    void GlobalBeginSendEvent(Object* sender, StringHash eventType, VariantMap& eventData) {
+        for (unsigned i = 0; i < globalEventListeners_.Size(); i++)
+            globalEventListeners_[i]->BeginSendEvent(this, sender, eventType, eventData);
+        eventSenders_.Push(sender);
+    }
+
+    /// End event send. Clean up event receivers removed in the meanwhile.
+    void GlobalEndSendEvent(Object* sender, StringHash eventType, VariantMap& eventData) {
+        for (unsigned i = 0; i < globalEventListeners_.Size(); i++)
+            globalEventListeners_[i]->EndSendEvent(this, sender, eventType, eventData);
+        eventSenders_.Pop();
+    }
+
     PODVector<GlobalEventListener*> globalEventListeners_;
     bool editorContext_;
+
+    WeakPtr<Engine> engine_;
+    WeakPtr<Time> time_;
+    WeakPtr<WorkQueue> workQueue_;
+    WeakPtr<Profiler> profiler_;
+    WeakPtr<FileSystem> fileSystem_;
+    WeakPtr<Log> log_;
+    WeakPtr<ResourceCache> cache_;
+    WeakPtr<Localization> l18n_;
+    WeakPtr<Network> network_;
+    WeakPtr<Web> web_;
+    WeakPtr<Database> db_;
+    WeakPtr<Input> input_;
+    WeakPtr<Audio> audio_;
+    WeakPtr<UI> ui_;
+    WeakPtr<SystemUI> systemUi_;
+    WeakPtr<Graphics> graphics_;
+    WeakPtr<Renderer> renderer_;
+    WeakPtr<Console> console_;
+    WeakPtr<DebugHud> debugHud_;
+    WeakPtr<Metrics> metrics_;
+
+    friend class Engine;
+
     // ATOMIC END
+
 };
 
 template <class T> void Context::RegisterFactory() { RegisterFactory(new ObjectFactoryImpl<T>(this)); }

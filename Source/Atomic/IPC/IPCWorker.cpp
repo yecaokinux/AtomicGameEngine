@@ -20,6 +20,7 @@
 // THE SOFTWARE.
 //
 
+#include "../Core/Timer.h"
 #include "../IO/Log.h"
 
 #include "IPCWorker.h"
@@ -39,18 +40,18 @@ namespace Atomic
 IPCWorker::IPCWorker(Context* context, IPCHandle clientRead, IPCHandle clientWrite, unsigned id) : IPCChannel(context, id)
 {
 #ifndef ATOMIC_PLATFORM_WINDOWS
-	assert(0); // wrong constructor
+    assert(0); // wrong constructor
 #else
-	otherProcess_ = new IPCProcess(context_, clientRead, clientWrite, INVALID_IPCHANDLE_VALUE);
+    otherProcess_ = new IPCProcess(context_, clientRead, clientWrite, INVALID_IPCHANDLE_VALUE);
 
-	if (!transport_.OpenClient(clientRead, clientWrite))
-	{
-		LOGERRORF("Unable to open IPC transport clientRead = %i", clientRead);
-		shouldRun_ = false;
-		return;
-	}
+    if (!transport_.OpenClient(clientRead, clientWrite))
+    {
+        ATOMIC_LOGERRORF("Unable to open IPC transport clientRead = %i", clientRead);
+        shouldRun_ = false;
+        return;
+    }
 
-	LOGERRORF("Opened IPC transport fd = %i", clientRead);
+    ATOMIC_LOGERRORF("Opened IPC transport fd = %i", clientRead);
 
 #endif
 
@@ -58,22 +59,22 @@ IPCWorker::IPCWorker(Context* context, IPCHandle clientRead, IPCHandle clientWri
 
 IPCWorker::IPCWorker(Context* context, IPCHandle fd, unsigned id) : IPCChannel(context, id),
     clientRead_(fd),
-	clientWrite_(fd)
+    clientWrite_(fd)
 {
 
 #ifdef ATOMIC_PLATFORM_WINDOWS
-	assert(0); // wrong constructor
+    assert(0); // wrong constructor
 #else
     otherProcess_ = new IPCProcess(context_, -1, clientRead_, getppid());
 
     if (!transport_.OpenClient(clientRead_))
     {
-        LOGERRORF("Unable to open IPC transport fd = %i", clientRead_);
+        ATOMIC_LOGERRORF("Unable to open IPC transport fd = %i", clientRead_);
         shouldRun_ = false;
         return;
     }
 
-    LOGERRORF("Opened IPC transport fd = %i", clientRead_);
+    ATOMIC_LOGERRORF("Opened IPC transport fd = %i", clientRead_);
 #endif
 }
 
@@ -100,15 +101,23 @@ void IPCWorker::ThreadFunction()
 {
     while (shouldRun_)
     {
+
+// On windows we use a job object to control process lifetime, we don't have a 
+// parent pid (these change and are reused on Windows, so we would need to DuplicateHandle and pass
+// to child on command line
+#ifndef ATOMIC_PLATFORM_WINDOWS
         if (!otherProcess_->IsRunning())
         {
             break;
         }
+#endif
 
         if (!Receive())
         {
            break;
         }
+
+        Time::Sleep(10);
     }
 
     shouldRun_ = false;

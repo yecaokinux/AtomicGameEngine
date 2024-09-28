@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
+// Copyright (c) 2014-2016, THUNDERBEAST GAMES LLC All rights reserved
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -74,7 +74,7 @@ void ProcSky::RegisterObject(Context* context)
 {
     context->RegisterFactory<ProcSky>(GEOMETRY_CATEGORY);
 
-    COPY_BASE_ATTRIBUTES(Drawable);
+    ATOMIC_COPY_BASE_ATTRIBUTES(Drawable);
 }
 
 
@@ -128,8 +128,8 @@ void ProcSky::OnNodeSet(Node* node)
 
     if (node && node->GetScene())
     {
-        SubscribeToEvent(node->GetScene(), E_SCENEUPDATE, HANDLER(ProcSky, HandleSceneUpdate));
-        SubscribeToEvent(E_BEGINVIEWUPDATE, HANDLER(ProcSky, HandleBeginViewUpdate));
+        SubscribeToEvent(node->GetScene(), E_SCENEUPDATE, ATOMIC_HANDLER(ProcSky, HandleSceneUpdate));
+        SubscribeToEvent(E_BEGINVIEWUPDATE, ATOMIC_HANDLER(ProcSky, HandleBeginViewUpdate));
     }
 
 }
@@ -182,10 +182,17 @@ float ProcSky::SetDayTime(float time)
         // fade out
         if (shadowFade_ < 0.0f || shadowFade_ != 1.0f)
         {
-            shadowFade_ += .05f;
+            if (autoUpdate_)
+            {
+                shadowFade_ += .05f;
 
-            if (shadowFade_ > 1.0f)
+                if (shadowFade_ > 1.0f)
+                    shadowFade_ = 1.0f;
+            }
+            else
+            {
                 shadowFade_ = 1.0f;
+            }
 
             sunlight_->SetShadowIntensity(shadowFade_);
 
@@ -205,10 +212,18 @@ float ProcSky::SetDayTime(float time)
         // fade in
         if (shadowFade_ < 0.0f || shadowFade_ != 0.0f)
         {
-            shadowFade_ -= .05f;
 
-            if (shadowFade_ < 0.0f)
+            if (autoUpdate_)
+            {
+                shadowFade_ -= .05f;
+
+                if (shadowFade_ < 0.0f)
+                    shadowFade_ = 0.0f;
+            }
+            else
+            {
                 shadowFade_ = 0.0f;
+            }
 
             sunlight_->SetShadowIntensity(shadowFade_);
 
@@ -439,7 +454,7 @@ void ProcSky::Initialize()
 
     skyMaterial_ = cache->GetResource<Material>("Materials/ProcSky.xml");
 
-    geometry_->SetVertexBuffer(0, vertexBuffer_, MASK_POSITION | MASK_NORMAL );
+    geometry_->SetVertexBuffer(0, vertexBuffer_);
     geometry_->SetIndexBuffer(indexBuffer_);
 
     indexBuffer_->SetSize( 6, false);

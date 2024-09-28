@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,8 +24,6 @@
 
 #ifndef ATOMIC_PCH_INCLUDED
 #define ATOMIC_PCH_INCLUDED
-
-#include "Atomic.h"
 
 #include "Container/HashMap.h"
 #include "Container/HashSet.h"

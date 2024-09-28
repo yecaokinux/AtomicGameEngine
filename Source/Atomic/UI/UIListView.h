@@ -31,9 +31,9 @@ namespace Atomic
 class ListViewItemSource;
 class ListViewItem;
 
-class UIListView : public UIWidget
+class ATOMIC_API UIListView : public UIWidget
 {
-    OBJECT(UIListView);
+    ATOMIC_OBJECT(UIListView, UIWidget);
 
 public:
     /// Construct.
@@ -95,6 +95,12 @@ private:
     HashMap<unsigned,ListViewItem*> itemLookup_;
 
     unsigned itemLookupId_;
+
+    void SelectItem(ListViewItem* item, bool select);
+
+    ListViewItem* pivot_;
+    int pivotIndex_;
+    bool startNewSelection_;
 
 };
 

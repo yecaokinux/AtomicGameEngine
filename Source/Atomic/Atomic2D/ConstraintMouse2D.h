@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,7 @@ namespace Atomic
 /// 2D mouse constraint component.
 class ATOMIC_API ConstraintMouse2D : public Constraint2D
 {
-    OBJECT(ConstraintMouse2D);
+    ATOMIC_OBJECT(ConstraintMouse2D, Constraint2D);
 
 public:
     /// Construct.
@@ -69,8 +69,6 @@ private:
     b2MouseJointDef jointDef_;
     /// Target.
     Vector2 target_;
-    /// Target setted.
-    bool targetSetted_;
 };
 
 }

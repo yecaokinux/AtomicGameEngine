@@ -32,11 +32,11 @@ class UIRenderer;
 
 /// A widget that can render a Texture2D, so the image data
 /// doesn't need to be loaded 2x (once for Texture2D and once for say a UIImageWidget)
-class UITextureWidget : public UIWidget
+class ATOMIC_API UITextureWidget : public UIWidget
 {
     friend class TBTextureWidget;
 
-    OBJECT(UITextureWidget)
+    ATOMIC_OBJECT(UITextureWidget, UIWidget)
 
 public:
 

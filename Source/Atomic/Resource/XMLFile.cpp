@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +32,9 @@
 #include "../Resource/ResourceCache.h"
 #include "../Resource/XMLFile.h"
 
+// ATOMIC BEGIN
 #include <PugiXml/src/pugixml.hpp>
+// ATOMIC END
 
 #include "../DebugNew.h"
 
@@ -71,8 +73,6 @@ XMLFile::XMLFile(Context* context) :
 
 XMLFile::~XMLFile()
 {
-    delete document_;
-    document_ = 0;
 }
 
 void XMLFile::RegisterObject(Context* context)
@@ -85,7 +85,7 @@ bool XMLFile::BeginLoad(Deserializer& source)
     unsigned dataSize = source.GetSize();
     if (!dataSize && !source.GetName().Empty())
     {
-        LOGERROR("Zero sized XML data in " + source.GetName());
+        ATOMIC_LOGERROR("Zero sized XML data in " + source.GetName());
         return false;
     }
 
@@ -95,7 +95,7 @@ bool XMLFile::BeginLoad(Deserializer& source)
 
     if (!document_->load_buffer(buffer.Get(), dataSize))
     {
-        LOGERROR("Could not parse XML data from " + source.GetName());
+        ATOMIC_LOGERROR("Could not parse XML data from " + source.GetName());
         document_->reset();
         return false;
     }
@@ -111,16 +111,15 @@ bool XMLFile::BeginLoad(Deserializer& source)
             cache->GetTempResource<XMLFile>(inherit);
         if (!inheritedXMLFile)
         {
-            LOGERRORF("Could not find inherited XML file: %s", inherit.CString());
+            ATOMIC_LOGERRORF("Could not find inherited XML file: %s", inherit.CString());
             return false;
         }
 
         // Patch this XMLFile and leave the original inherited XMLFile as it is
-        pugi::xml_document* patchDocument = document_;
+        UniquePtr<pugi::xml_document> patchDocument(document_.Detach());
         document_ = new pugi::xml_document();
         document_->reset(*inheritedXMLFile->document_);
         Patch(rootElem);
-        delete patchDocument;
 
         // Store resource dependencies so we know when to reload/repatch when the inherited resource changes
         cache->StoreResourceDependency(this, inherit);
@@ -151,6 +150,17 @@ XMLElement XMLFile::CreateRoot(const String& name)
     document_->reset();
     pugi::xml_node root = document_->append_child(name.CString());
     return XMLElement(this, root.internal_object());
+}
+
+XMLElement XMLFile::GetOrCreateRoot(const String& name)
+{
+    XMLElement root = GetRoot(name);
+    if (root.NotNull())
+        return root;
+    root = GetRoot();
+    if (root.NotNull())
+        ATOMIC_LOGWARNING("XMLFile already has root " + root.GetName() + ", deleting it and creating root " + name);
+    return CreateRoot(name);
 }
 
 bool XMLFile::FromString(const String& source)
@@ -196,7 +206,7 @@ void XMLFile::Patch(XMLElement patchElement)
         pugi::xml_attribute sel = patch->attribute("sel");
         if (sel.empty())
         {
-            LOGERROR("XML Patch failed due to node not having a sel attribute.");
+            ATOMIC_LOGERROR("XML Patch failed due to node not having a sel attribute.");
             continue;
         }
 
@@ -204,7 +214,7 @@ void XMLFile::Patch(XMLElement patchElement)
         pugi::xpath_node original = document_->select_single_node(sel.value());
         if (!original)
         {
-            LOGERRORF("XML Patch failed with bad select: %s.", sel.value());
+            ATOMIC_LOGERRORF("XML Patch failed with bad select: %s.", sel.value());
             continue;
         }
 
@@ -215,7 +225,7 @@ void XMLFile::Patch(XMLElement patchElement)
         else if (strcmp(patch->name(), "remove") == 0)
             PatchRemove(original);
         else
-            LOGERROR("XMLFiles used for patching should only use 'add', 'replace' or 'remove' elements.");
+            ATOMIC_LOGERROR("XMLFiles used for patching should only use 'add', 'replace' or 'remove' elements.");
     }
 }
 
@@ -224,7 +234,7 @@ void XMLFile::PatchAdd(const pugi::xml_node& patch, pugi::xpath_node& original) 
     // If not a node, log an error
     if (original.attribute())
     {
-        LOGERRORF("XML Patch failed calling Add due to not selecting a node, %s attribute was selected.",
+        ATOMIC_LOGERRORF("XML Patch failed calling Add due to not selecting a node, %s attribute was selected.",
             original.attribute().name());
         return;
     }
@@ -344,7 +354,7 @@ void XMLFile::AddAttribute(const pugi::xml_node& patch, const pugi::xpath_node& 
 
     if (!patch.first_child() && patch.first_child().type() != pugi::node_pcdata)
     {
-        LOGERRORF("XML Patch failed calling Add due to attempting to add non text to an attribute for %s.", attribute.value());
+        ATOMIC_LOGERRORF("XML Patch failed calling Add due to attempting to add non text to an attribute for %s.", attribute.value());
         return;
     }
 

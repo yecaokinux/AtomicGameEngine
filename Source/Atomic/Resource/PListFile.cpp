@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -229,6 +229,16 @@ IntVector2 PListValue::GetIntVector2() const
     return IntVector2(x, y);
 }
 
+IntVector3 PListValue::GetIntVector3() const
+{
+    if (type_ != PLVT_STRING)
+        return IntVector3::ZERO;
+
+    int x, y, z;
+    sscanf(string_->CString(), "{%d,%d,%d}", &x, &y, &z);
+    return IntVector3(x, y, z);
+}
+
 const PListValueMap& PListValue::GetValueMap() const
 {
     return type_ == PLVT_VALUEMAP ? *valueMap_ : EMPTY_VALUEMAP;
@@ -308,14 +318,14 @@ bool PListFile::BeginLoad(Deserializer& source)
     XMLFile xmlFile(context_);
     if (!xmlFile.Load(source))
     {
-        LOGERROR("Could not load property list");
+        ATOMIC_LOGERROR("Could not load property list");
         return false;
     }
 
     XMLElement plistElem = xmlFile.GetRoot("plist");
     if (!plistElem)
     {
-        LOGERROR("Invalid property list file");
+        ATOMIC_LOGERROR("Invalid property list file");
         return false;
     }
 
@@ -399,7 +409,7 @@ bool PListFile::LoadValue(PListValue& value, const XMLElement& valueElem)
     }
     else
     {
-        LOGERROR("Supported value type");
+        ATOMIC_LOGERROR("Supported value type");
         return false;
     }
 

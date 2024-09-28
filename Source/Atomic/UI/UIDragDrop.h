@@ -34,10 +34,10 @@ class UITextField;
 class UIDragObject;
 
 /// UIDragDrop subsystem
-class UIDragDrop : public Object
+class ATOMIC_API UIDragDrop : public Object
 {
 
-    OBJECT(UIDragDrop);
+    ATOMIC_OBJECT(UIDragDrop, Object);
 
 public:
     /// Construct.
@@ -53,7 +53,7 @@ public:
 
 private:
 
-    void HandleMouseDown(StringHash eventType, VariantMap& eventData);
+    void HandleUIUpdate(StringHash eventType, VariantMap& eventData);
     void HandleMouseUp(StringHash eventType, VariantMap& eventData);
     void HandleMouseMove(StringHash eventType, VariantMap& eventData);
 
@@ -64,12 +64,13 @@ private:
     SharedPtr<UIImageWidget> dragImage_;
     SharedPtr<UITextField> dragText_;
 
-    WeakPtr<UIWidget> currentTargetWidget_;
-    WeakPtr<UIWidget> dragSourceWidget_;
+    SharedPtr<UIWidget> currentTargetWidget_;
+    SharedPtr<UIWidget> dragSourceWidget_;
 
     SharedPtr<UIDragObject> dragObject_;
 
-
+    // initial mouse down position to handle whether or not to start a drag operation
+    IntVector2 mouseDownPosition_;
 
 };
 

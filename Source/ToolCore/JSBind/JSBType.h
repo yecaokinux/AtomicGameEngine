@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
@@ -99,6 +114,8 @@ public:
         case Bool:
             return "bool";
         case Short:
+            if (isUnsigned_)
+                return "unsigned short";
             return "short";
         case Int:
             if (isUnsigned_)
@@ -135,7 +152,7 @@ public:
         if (!other)
             return false;
 
-        return other->asStringType() == 0 ? false : true;
+        return (other->asStringType() == 0 && other->asStringHashType() == 0) ? false : true;
     }
 
 
@@ -154,7 +171,7 @@ public:
         if (!other)
             return false;
 
-        return other->asStringHashType() == 0 ? false : true;
+        return (other->asStringHashType() == 0 && other->asStringType() == 0)  ? false : true;
     }
 
 };
@@ -205,35 +222,6 @@ public:
 
 };
 
-class JSBVectorType : public JSBType
-{
-
-public:
-
-    JSBType* vectorType_;
-
-    JSBVectorType(JSBType* vtype) : vectorType_(vtype) {}
-
-    virtual JSBVectorType* asVectorType() { return this; }
-
-    String ToString() { return "Vector<" + vectorType_->ToString() + ">"; }
-
-    virtual bool Match (JSBType* other)
-    {
-        if (!other)
-            return false;
-
-        JSBVectorType* pother = other->asVectorType();
-
-        if (!pother || !vectorType_->Match(pother->vectorType_))
-            return false;
-
-        return true;
-    }
-
-};
-
-
 
 class JSBClassType : public JSBType
 {
@@ -268,5 +256,42 @@ public:
 
 
 };
+
+class JSBVectorType : public JSBType
+{
+
+public:
+
+    JSBVectorType(JSBType* vtype, bool podVector = false, bool variantVector = false) : vectorType_(vtype),
+        vectorTypeIsWeakPtr_(false),
+        vectorTypeIsSharedPtr_(false),
+        isPODVector_(podVector),
+        isVariantVector_(variantVector) {}
+
+    virtual JSBVectorType* asVectorType() { return this; }
+
+    String ToString();
+
+    virtual bool Match (JSBType* other)
+    {
+        if (!other)
+            return false;
+
+        JSBVectorType* pother = other->asVectorType();
+
+        if (!pother || !vectorType_->Match(pother->vectorType_))
+            return false;
+
+        return true;
+    }
+
+    JSBType* vectorType_;
+    bool vectorTypeIsWeakPtr_;
+    bool vectorTypeIsSharedPtr_;
+    bool isPODVector_;
+    bool isVariantVector_;
+
+};
+
 
 }

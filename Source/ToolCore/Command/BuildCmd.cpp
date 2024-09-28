@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/StringUtils.h>
@@ -13,6 +28,7 @@
 #include "../Project/Project.h"
 #include "../Build/BuildEvents.h"
 #include "../Build/BuildSystem.h"
+#include "../Build/AssetBuildConfig.h"
 
 #include "BuildCmd.h"
 #include <Poco/File.h>
@@ -20,7 +36,10 @@
 namespace ToolCore
 {
 
-BuildCmd::BuildCmd(Context* context) : Command(context)
+BuildCmd::BuildCmd(Context* context) :
+    Command(context),
+    autoLog_(false),
+    verbose_(false)
 {
 
 }
@@ -30,7 +49,7 @@ BuildCmd::~BuildCmd()
 
 }
 
-bool BuildCmd::Parse(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
+bool BuildCmd::ParseInternal(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
 {
     String argument = arguments[startIndex].ToLower();
     String value = startIndex + 1 < arguments.Size() ? arguments[startIndex + 1] : String::EMPTY;
@@ -49,6 +68,32 @@ bool BuildCmd::Parse(const Vector<String>& arguments, unsigned startIndex, Strin
 
     buildPlatform_ = value.ToLower();
 
+    for (int i = startIndex + 2; i < arguments.Size(); ++i)
+    {
+        String option = arguments[i].ToLower();
+
+        if (option == "-tag")
+        {
+            if (arguments.Size() == i + 1)
+            {
+                errorMsg = "Missing tag";
+                return false;
+            }
+        }
+        else if (option == "-autolog")
+        {
+            autoLog_ = true;
+        }
+        else if (option == "-verbose")
+        {
+            verbose_ = true;
+        }
+    }
+
+    String tag = startIndex + 2 < arguments.Size() ? arguments[startIndex + 2] : String::EMPTY;
+
+    assetsBuildTag_ = tag.ToLower();
+
     return true;
 }
 
@@ -63,9 +108,11 @@ void BuildCmd::HandleBuildComplete(StringHash eventType, VariantMap& eventData)
 
 }
 
+
+
 void BuildCmd::Run()
 {
-    LOGINFOF("Building project for: %s", buildPlatform_.CString());
+    ATOMIC_LOGINFOF("Building project for: %s", buildPlatform_.CString());
 
     ToolSystem* tsystem = GetSubsystem<ToolSystem>();
     Project* project = tsystem->GetProject();
@@ -80,21 +127,21 @@ void BuildCmd::Run()
         return;
     }
 
-    if (!project->ContainsPlatform(platform->GetPlatformID()))
-    {
-        Error(ToString("Project does not contain platform: %s", buildPlatform_.CString()));
-        return;
-    }
-
     // create the build
     BuildBase* buildBase = platform->NewBuild(project);
+    if (!assetsBuildTag_.Empty())
+    {
+        buildBase->SetAssetBuildTag(assetsBuildTag_);
+    }
+    buildBase->SetAutoLog(autoLog_);
+    buildBase->SetVerbose(verbose_);
 
     // add it to the build system
     BuildSystem* buildSystem = GetSubsystem<BuildSystem>();
 
     buildSystem->QueueBuild(buildBase);
 
-    SubscribeToEvent(E_BUILDCOMPLETE, HANDLER(BuildCmd, HandleBuildComplete));
+    SubscribeToEvent(E_BUILDCOMPLETE, ATOMIC_HANDLER(BuildCmd, HandleBuildComplete));
 
     // TODO: parallel/serial builds
     buildSystem->StartNextBuild();

@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #pragma once
@@ -17,7 +32,7 @@ namespace ToolCore
 class JSBModule;
 class JSBClass;
 class JSBEnum;
-
+class JSBEvent;
 class JSBPackageWriter;
 
 class JSBPackage : public Object
@@ -26,9 +41,15 @@ class JSBPackage : public Object
     friend class JSPackageWriter;
     friend class CSPackageWriter;
 
-    OBJECT(JSBPackage)
+    ATOMIC_OBJECT(JSBPackage, Object)
 
 public:
+
+    enum BindingType
+    {
+        JAVASCRIPT,
+        CSHARP
+    };
 
     JSBPackage(Context* context);
     virtual ~JSBPackage();
@@ -44,14 +65,16 @@ public:
     const String& GetName() { return name_; }
     const String& GetNamespace() { return namespace_; }
 
+    /// Returns whether bindings for a specific type should be generated for this package
+    bool GenerateBindings(BindingType type) { return bindingTypes_.Contains(type); }
 
-    JSBClass* GetClass(const String& name);
+    JSBClass* GetClass(const String& name, bool includeInterfaces = false);
 
-    PODVector<JSBClass*>& GetAllClasses() { return allClasses_; }
+    PODVector<JSBClass*> GetAllClasses(bool includeInterfaces = false);
     void RegisterClass(JSBClass* cls) {allClasses_.Push(cls); }
 
     // get a class by name across all loaded packages
-    static JSBClass* GetClassAllPackages(const String& name);
+    static JSBClass* GetClassAllPackages(const String& name, bool includeInterfaces = false);
 
     JSBEnum* GetEnum(const String& name);
 
@@ -62,7 +85,19 @@ public:
 
     static bool ContainsConstantAllPackages(const String& constantName);
 
+    /// Get an event from this package, matches on either eventID or eventName
+    JSBEvent* GetEvent(const String& eventID, const String& eventName);
+
+    // get an event by name across all loaded packages
+    static JSBEvent* GetEventAllPackages(const String& eventID, const String& eventName);
+
     void GenerateSource(JSBPackageWriter& packageWriter);
+
+    /// Define guard for the package as a whole
+    String GetPlatformDefineGuard() const;
+
+    const Vector<String>& GetPlatforms() const { return platforms_; }
+    const HashMap<String, Vector<String>>& GetModuleExcludes() const { return moduleExcludes_; }
 
 private:
 
@@ -74,10 +109,13 @@ private:
 
     Vector<SharedPtr<JSBPackage> > dependencies_;
 
+    Vector<String> platforms_;
     HashMap<String, Vector<String>> moduleExcludes_;
 
     Vector<SharedPtr<JSBModule> > modules_;
     PODVector<JSBClass*> allClasses_;
+
+    PODVector<BindingType> bindingTypes_;
 
     static Vector<SharedPtr<JSBPackage> > allPackages_;
 

@@ -60,7 +60,7 @@ private:
 
 class PipeTransport : public PipeUnix {
 public:
-    static const size_t kBufferSz = 4096;
+    static const size_t kBufferSz = 1024 * 1024;
 
     bool Send(const void* buf, size_t sz) {
         return Write(buf, sz);
@@ -72,17 +72,19 @@ private:
     PODVector<char> buf_;
 };
 
-class IPCProcess : public Object
+class ATOMIC_API IPCProcess : public Object
 {
-    OBJECT(IPCProcess)
+    ATOMIC_OBJECT(IPCProcess, Object)
 
     public:
 
-        IPCProcess(Context* context, int fd1, int fd2, int pid = -1);
+    IPCProcess(Context* context, int fd1, int fd2, int pid = -1);
 
     virtual ~IPCProcess();
 
     bool IsRunning();
+
+    bool Terminate() { return true; }
 
     int fd1() const { return fd1_; }
     int fd2() const { return fd2_; }

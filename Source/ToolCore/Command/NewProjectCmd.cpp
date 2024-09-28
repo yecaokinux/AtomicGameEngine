@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/StringUtils.h>
@@ -29,7 +44,7 @@ NewProjectCmd::~NewProjectCmd()
 
 }
 
-bool NewProjectCmd::Parse(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
+bool NewProjectCmd::ParseInternal(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
 {
     String argument = arguments[startIndex].ToLower();
     String value = startIndex + 1 < arguments.Size() ? arguments[startIndex + 1] : String::EMPTY;
@@ -53,35 +68,7 @@ bool NewProjectCmd::Parse(const Vector<String>& arguments, unsigned startIndex, 
 
 void NewProjectCmd::Run()
 {
-    Poco::File projectDest(projectPath_.CString());
-
-    if (projectDest.exists())
-    {
-        Error(ToString("New project path: %s already exists", projectPath_.CString()));
-        return;
-    }
-
-    ToolSystem* tsystem = GetSubsystem<ToolSystem>();
-    String templateDir = tsystem->GetDataPath();
-    templateDir += "ProjectTemplates/Project2D/Resources";
-
-    Poco::File projectSrc(templateDir.CString());
-    if (!projectSrc.exists() || !projectSrc.isDirectory())
-    {
-        Error(ToString("New project path: %s source does not exist", templateDir.CString()));
-        return;
-    }
-
-    LOGINFOF("Creating new project in: %s", projectPath_.CString());
-
-    projectDest.createDirectory();
-    projectSrc.copyTo((projectPath_ + "/Resources").CString());
-
-    String filename("NewProject");
-    SharedPtr<ProjectFile> pfile(new ProjectFile(context_));
-    pfile->WriteNewProject(projectPath_ + "/" + filename + ".atomic");
-
-    Finished();
+    Error("NewProjectCmd is under maintenance, please use the AtomicEditor to create a new project");
 }
 
 }

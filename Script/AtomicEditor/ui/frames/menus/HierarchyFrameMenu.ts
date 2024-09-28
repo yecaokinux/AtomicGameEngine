@@ -1,27 +1,46 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 import strings = require("ui/EditorStrings");
-import EditorEvents = require("editor/EditorEvents");
 import EditorUI = require("ui/EditorUI");
 import MenuItemSources = require("./MenuItemSources");
+import ServiceLocator from "../../../hostExtensions/ServiceLocator";
 
 class HierarchyFrameMenus extends Atomic.ScriptObject {
+
+    contentFolder: string;
+
+    private contextMenuItemSource: Atomic.UIMenuItemSource = null;
 
     constructor() {
 
         super();
 
         MenuItemSources.createMenuItemSource("hierarchy create items", createItems);
-        MenuItemSources.createMenuItemSource("node context general", nodeGeneralContextItems);
+        this.contextMenuItemSource = MenuItemSources.createMenuItemSource("node context general", nodeGeneralContextItems);
 
-        this.subscribeToEvent(EditorEvents.ContentFolderChanged, (ev: EditorEvents.ContentFolderChangedEvent) => {
+        this.subscribeToEvent(Editor.ContentFolderChangedEvent((ev: Editor.ContentFolderChangedEvent) => {
             this.contentFolder = ev.path;
-        })
+        }));
 
     }
 
@@ -54,7 +73,7 @@ class HierarchyFrameMenus extends Atomic.ScriptObject {
             }
 
             if (child) {
-                child.scene.sendEvent("SceneEditNodeCreated", { node : child});
+                child.scene.sendEvent(Editor.SceneEditNodeCreatedEventData({ node: child }));
             }
 
             return true;
@@ -65,11 +84,11 @@ class HierarchyFrameMenus extends Atomic.ScriptObject {
 
     }
 
-    handleNodeContextMenu(target: Atomic.UIWidget, refid: string): boolean {
+    handleNodeContextMenu(target: Atomic.UIWidget, refid: string, editor: Editor.SceneEditor3D): boolean {
 
         if (target.id == "node context menu") {
 
-            var node = <Atomic.Node> target['node'];
+            var node = <Atomic.Node>target["node"];
 
             if (!node) {
                 return false;
@@ -77,16 +96,32 @@ class HierarchyFrameMenus extends Atomic.ScriptObject {
 
             if (refid == "delete_node") {
 
-              node.removeAllComponents();
-              node.remove();
+                if (node instanceof Atomic.Scene)
+                    return;
+
+                var scene = node.scene;
+                scene.sendEvent(Editor.SceneEditAddRemoveNodesEventData({ end: false }));
+                scene.sendEvent(Editor.SceneEditNodeRemovedEventData({ node: node, parent: node.parent, scene: scene }));
+                node.remove();
+                scene.sendEvent(Editor.SceneEditAddRemoveNodesEventData({ end: true }));
+
+                editor.selection.delete();
+
+                return true;
 
             } else if (refid == "duplicate_node") {
 
+                if (node instanceof Atomic.Scene)
+                    return;
+
                 var newnode = node.clone();
-                node.scene.sendEvent("SceneEditNodeCreated", { node : newnode});
+                node.scene.sendEvent(Editor.SceneEditNodeCreatedEventData({ node: newnode }));
+
+                return true;
             }
 
-            return true;
+            // Let plugins handle context
+            return ServiceLocator.uiServices.hierarchyContextItemClicked(node, refid);
         }
 
         return false;
@@ -99,7 +134,7 @@ class HierarchyFrameMenus extends Atomic.ScriptObject {
 
         var menu = new Atomic.UIMenuWindow(parent, "node context menu");
 
-        menu['node'] = node;
+        menu["node"] = node;
 
         var srcName: string = "node context general";
 
@@ -109,7 +144,13 @@ class HierarchyFrameMenus extends Atomic.ScriptObject {
 
     }
 
-    contentFolder: string;
+    createPluginItemSource(id: string, items: any): Atomic.UIMenuItemSource {
+        return MenuItemSources.createSubMenuItemSource(this.contextMenuItemSource , id, items);
+    }
+
+    removePluginItemSource(id: string) {
+        this.contextMenuItemSource.removeItemWithStr(id);
+    }
 
 }
 

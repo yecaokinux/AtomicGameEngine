@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Atomic/Core/StringUtils.h>
@@ -16,6 +31,7 @@
 #include "../Project/Project.h"
 #include "../Project/ProjectBuildSettings.h"
 #include "../Platform/PlatformAndroid.h"
+#include "../Assets/AssetDatabase.h"
 
 #include "AndroidProjectGenerator.h"
 
@@ -67,7 +83,7 @@ void BuildAndroid::RunADBStartActivity()
     Subprocess* subprocess = subs->Launch(adbCommand, args, buildPath_);
     if (!subprocess)
     {
-        FailBuild("BuildFailed::RunStartActivity");
+        FailBuild("StartActivity operation did not launch successfully.");
         return;
     }
 
@@ -75,8 +91,8 @@ void BuildAndroid::RunADBStartActivity()
     buildOutput[BuildOutput::P_TEXT] = "\n\n<color #D4FB79>Starting Android Activity</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildAndroid, HandleADBStartActivityComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildAndroid, HandleADBStartActivityComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 }
 
@@ -99,18 +115,23 @@ void BuildAndroid::HandleRunADBInstallComplete(StringHash eventType, VariantMap&
 
 void BuildAndroid::RunADBInstall()
 {
-
+    ToolEnvironment* tenv = GetSubsystem<ToolEnvironment>();
+    ToolPrefs* prefs = tenv->GetToolPrefs();
     SubprocessSystem* subs = GetSubsystem<SubprocessSystem>();
     String adbCommand = platformAndroid_->GetADBCommand();
 
-    Vector<String> args = String("install -r ./bin/Atomic-debug-unaligned.apk").Split(' ');
+    Vector<String> args;
+
+    if ( prefs->GetReleaseCheck() > 2 ) // install release apk
+        args = String("install -r ./bin/Atomic-release.apk").Split(' ');
+    else
+        args = String("install -r ./bin/Atomic-debug.apk").Split(' ');
 
     currentBuildPhase_ = ADBInstall;
     Subprocess* subprocess = subs->Launch(adbCommand, args, buildPath_);
-
     if (!subprocess)
     {
-        FailBuild("BuildFailed::RunADBInstall");
+        FailBuild("APK Device Installation operation did not launch successfully.");
         return;
     }
 
@@ -118,8 +139,8 @@ void BuildAndroid::RunADBInstall()
     buildOutput[BuildOutput::P_TEXT] = "\n\n<color #D4FB79>Installing on Android Device</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildAndroid, HandleRunADBInstallComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildAndroid, HandleRunADBInstallComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 }
 
@@ -194,7 +215,7 @@ void BuildAndroid::RunADBListDevices()
 
     if (!subprocess)
     {
-        FailBuild("BuildFailed::RunADBListDevices");
+        FailBuild("Android List Device operation did not launch successfully.");
         return;
     }
 
@@ -202,8 +223,8 @@ void BuildAndroid::RunADBListDevices()
     buildOutput[BuildOutput::P_TEXT] = "\n\n<color #D4FB79>Listing Android Devices</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildAndroid, HandleADBListDevicesComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildAndroid, HandleADBListDevicesOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildAndroid, HandleADBListDevicesComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildAndroid, HandleADBListDevicesOutputEvent));
 
 }
 
@@ -230,11 +251,18 @@ void BuildAndroid::RunAntDebug()
 
     Poco::Process::Env env;
 
+    String buildApk = "debug";  // the default
+
+    if ( tprefs->GetReleaseCheck() > 2 ) // create release apk
+        buildApk = "release";
+
+
 #ifdef ATOMIC_PLATFORM_OSX
     String antCommand = tprefs->GetAntPath();
     Vector<String> args;
-    args.Push("debug");
-#else
+    args.Push(buildApk);
+#endif
+#ifdef ATOMIC_PLATFORM_WINDOWS
     // C:\ProgramData\Oracle\Java\javapath;
     Vector<String> args;
     String antCommand = "cmd";
@@ -243,7 +271,26 @@ void BuildAndroid::RunAntDebug()
     // ant is a batch file on windows, so have to run with cmd /c
     args.Push("/c");
     args.Push("\"" + antPath + "\"");
-    args.Push("debug");
+    args.Push(buildApk);
+#endif
+#ifdef ATOMIC_PLATFORM_LINUX 
+
+    String antCommand = tprefs->GetAntPath();
+    if ( antCommand.Empty() ) // user didnt fill it out, use installed one
+    {
+        antCommand = "/usr/bin/ant"; // system default if installed
+    }
+    else
+    {
+        antCommand.Append("/ant"); 
+    }
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+    if ( !fileSystem->FileExists ( antCommand) ) 
+    {
+        FailBuild("The ant program can not be found, check the Ant Path in Build Settings.");
+    }
+    Vector<String> args;
+    args.Push(buildApk);
 #endif
 
     currentBuildPhase_ = AntBuildDebug;
@@ -251,16 +298,16 @@ void BuildAndroid::RunAntDebug()
 
     if (!subprocess)
     {
-        FailBuild("BuildFailed::RunAntDebug");
+        FailBuild("The ant build operation did not launch successfully.");
         return;
     }
 
     VariantMap buildOutput;
-    buildOutput[BuildOutput::P_TEXT] = "<color #D4FB79>Starting Android Deployment</color>\n\n";
+    buildOutput[BuildOutput::P_TEXT] = "<color #D4FB79>Starting Android " + buildApk + " Deployment</color>\n\n";
     SendEvent(E_BUILDOUTPUT, buildOutput);
 
-    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, HANDLER(BuildAndroid, HandleAntDebugComplete));
-    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, HANDLER(BuildBase, HandleSubprocessOutputEvent));
+    SubscribeToEvent(subprocess, E_SUBPROCESSCOMPLETE, ATOMIC_HANDLER(BuildAndroid, HandleAntDebugComplete));
+    SubscribeToEvent(subprocess, E_SUBPROCESSOUTPUT, ATOMIC_HANDLER(BuildBase, HandleSubprocessOutputEvent));
 
 }
 
@@ -271,18 +318,22 @@ void BuildAndroid::Initialize()
 
     Vector<String> defaultResourcePaths;
     GetDefaultResourcePaths(defaultResourcePaths);
-    String projectResources = project->GetResourcePath();
+    
 
     for (unsigned i = 0; i < defaultResourcePaths.Size(); i++)
     {
         AddResourceDir(defaultResourcePaths[i]);
     }
+    BuildDefaultResourceEntries();
 
     // TODO: smart filtering of cache
-    AddResourceDir(project->GetProjectPath() + "Cache/");
-    AddResourceDir(projectResources);
+    String projectResources = project->GetResourcePath();
+    AddProjectResourceDir(projectResources);
+    AssetDatabase* db = GetSubsystem<AssetDatabase>();
+    String cachePath = db->GetCachePath();
+    AddProjectResourceDir(cachePath);
 
-    BuildResourceEntries();
+    BuildProjectResourceEntries();
 }
 
 void BuildAndroid::Build(const String& buildPath)
@@ -294,6 +345,9 @@ void BuildAndroid::Build(const String& buildPath)
     buildPath_ = AddTrailingSlash(buildPath) + GetBuildSubfolder();
 
     Initialize();
+ 
+    if (!BuildClean(buildPath_))
+        return;
 
     //generate manifest file
     String manifest;
@@ -305,16 +359,14 @@ void BuildAndroid::Build(const String& buildPath)
             manifest += ";";
     }
 
-    FileSystem* fileSystem = GetSubsystem<FileSystem>();
-    if (fileSystem->DirExists(buildPath_))
-        fileSystem->RemoveDir(buildPath_, true);
-
     String buildSourceDir = tenv->GetToolDataDir();
 
     String androidProject = buildSourceDir + "Deployment/Android";
 
     // Copy the base android project
-    fileSystem->CopyDir(androidProject, buildPath_);
+    FileSystem* fileSystem = GetSubsystem<FileSystem>();
+    if( !BuildCopyDir(androidProject, buildPath_))
+        return;
 
     Vector<String> defaultResourcePaths;
     GetDefaultResourcePaths(defaultResourcePaths);
@@ -322,18 +374,28 @@ void BuildAndroid::Build(const String& buildPath)
 
     for (unsigned i = 0; i < defaultResourcePaths.Size(); i++)
     {
-        fileSystem->CopyDir(defaultResourcePaths[i], buildPath_ + "/assets/" + GetFileName(RemoveTrailingSlash(defaultResourcePaths[i])));
+        if ( !BuildCopyDir(defaultResourcePaths[i], buildPath_ + "/assets/" + GetFileName(RemoveTrailingSlash(defaultResourcePaths[i]))))
+            return;
     }
 
-    fileSystem->CopyDir(project->GetProjectPath() + "Cache/", buildPath_ + "/assets/Cache");
-    fileSystem->CopyDir(projectResources, buildPath_ + "/assets/AtomicResources");
+    if( !BuildCopyDir(project->GetProjectPath() + "Cache/", buildPath_ + "/assets/Cache"))
+        return;
+    if( !BuildCopyDir(projectResources, buildPath_ + "/assets/AtomicResources"))
+        return;
 
     // write the manifest
     SharedPtr<File> mfile(new File(context_, buildPath_ + "/assets/AtomicManifest", FILE_WRITE));
     mfile->WriteString(manifest);
     mfile->Close();
 
-    AndroidProjectGenerator gen(context_);
+    //check for Deployment/Android/libs/armeabi-v7a/libAtomicPlayer.so
+    if ( !fileSystem->FileExists(androidProject + "/libs/armeabi-v7a/libAtomicPlayer.so")  )
+    {
+        FailBuild( "The file libAtomicPlayer.so is not found. This is required for APK generation." );
+        return;
+    }
+
+    AndroidProjectGenerator gen(context_, this);
     gen.SetBuildPath(buildPath_);
 
     if (!gen.Generate())

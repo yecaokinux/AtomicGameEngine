@@ -39,6 +39,7 @@
 #include <TurboBadger/tb_menu_window.h>
 #include <TurboBadger/tb_popup_window.h>
 #include <TurboBadger/image/tb_image_widget.h>
+#include <TurboBadger/tb_atomic_widgets.h>
 
 void register_tbbf_font_renderer();
 void register_stb_font_renderer();
@@ -61,6 +62,7 @@ using namespace tb;
 
 #include "UIRenderer.h"
 #include "UI.h"
+#include "UIView.h"
 #include "UIButton.h"
 #include "UITextField.h"
 #include "UIEditField.h"
@@ -83,6 +85,18 @@ using namespace tb;
 #include "UISelectDropdown.h"
 #include "UIMenuWindow.h"
 #include "UIPopupWindow.h"
+#include "UISlider.h"
+#include "UIColorWidget.h"
+#include "UIColorWheel.h"
+#include "UIBargraph.h"
+#include "UIPromptWindow.h"
+#include "UIFinderWindow.h"
+#include "UIPulldownMenu.h"
+#include "UIComponent.h"
+#include "UIRadioButton.h"
+#include "UIScrollBar.h"
+#include "UIDockWindow.h"
+#include "UIButtonGrid.h"
 
 #include "SystemUI/SystemUI.h"
 #include "SystemUI/SystemUIEvents.h"
@@ -100,12 +114,15 @@ void TBSystem::RescheduleTimer(double fire_time)
 
 }
 
-
 namespace Atomic
 {
 
-WeakPtr<Context> UI::uiContext_;
+void RegisterUILibrary(Context* context)
+{
+    UIComponent::RegisterObject(context);
+}
 
+WeakPtr<Context> UI::uiContext_;
 
 UI::UI(Context* context) :
     Object(context),
@@ -116,10 +133,13 @@ UI::UI(Context* context) :
     skinLoaded_(false),
     consoleVisible_(false),
     exitRequested_(false),
-    changedEventsBlocked_(0)
+    changedEventsBlocked_(0),
+    tooltipHoverTime_ (0.0f)
 {
 
-    SubscribeToEvent(E_EXITREQUESTED, HANDLER(UI, HandleExitRequested));
+    RegisterUILibrary(context);
+
+    SubscribeToEvent(E_EXITREQUESTED, ATOMIC_HANDLER(UI, HandleExitRequested));
 
 }
 
@@ -134,13 +154,15 @@ UI::~UI()
 
         TBFile::SetReaderFunction(0);
         TBID::tbidRegisterCallback = 0;
-        
+
         tb::TBWidgetsAnimationManager::Shutdown();
 
-        widgetWrap_.Clear();
         delete rootWidget_;
+        widgetWrap_.Clear();
+
         // leak
         //delete TBUIRenderer::renderer_;
+
         tb_core_shutdown();
     }
 
@@ -176,7 +198,7 @@ void UI::SetBlockChangedEvents(bool blocked)
 
         if (changedEventsBlocked_ < 0)
         {
-            LOGERROR("UI::BlockChangedEvents - mismatched block calls, setting to 0");
+            ATOMIC_LOGERROR("UI::BlockChangedEvents - mismatched block calls, setting to 0");
             changedEventsBlocked_ = 0;
         }
     }
@@ -189,8 +211,6 @@ void UI::Initialize(const String& languageFile)
     assert(graphics);
     assert(graphics->IsInitialized());
     graphics_ = graphics;
-
-    vertexBuffer_ = new VertexBuffer(context_);
 
     uiContext_ = context_;
 
@@ -213,33 +233,18 @@ void UI::Initialize(const String& languageFile)
     rootWidget_->SetSize(width, height);
     rootWidget_->SetVisibilility(tb::WIDGET_VISIBILITY_VISIBLE);
 
-    // register the UIDragDrop subsystem
+    SubscribeToEvent(E_UPDATE, ATOMIC_HANDLER(UI, HandleUpdate));
+    SubscribeToEvent(E_SCREENMODE, ATOMIC_HANDLER(UI, HandleScreenMode));
+    SubscribeToEvent(E_CONSOLECLOSED, ATOMIC_HANDLER(UI, HandleConsoleClosed));
+    SubscribeToEvent(E_POSTUPDATE, ATOMIC_HANDLER(UI, HandlePostUpdate));
+    SubscribeToEvent(E_RENDERUPDATE, ATOMIC_HANDLER(UI, HandleRenderUpdate));
+
+    // register the UIDragDrop subsystem (after we have subscribed to events, so it is processed after)
     context_->RegisterSubsystem(new UIDragDrop(context_));
-
-    SubscribeToEvent(E_MOUSEBUTTONDOWN, HANDLER(UI, HandleMouseButtonDown));
-    SubscribeToEvent(E_MOUSEBUTTONUP, HANDLER(UI, HandleMouseButtonUp));
-    SubscribeToEvent(E_MOUSEMOVE, HANDLER(UI, HandleMouseMove));
-    SubscribeToEvent(E_MOUSEWHEEL, HANDLER(UI, HandleMouseWheel));
-    SubscribeToEvent(E_KEYDOWN, HANDLER(UI, HandleKeyDown));
-    SubscribeToEvent(E_KEYUP, HANDLER(UI, HandleKeyUp));
-    SubscribeToEvent(E_TEXTINPUT, HANDLER(UI, HandleTextInput));
-    SubscribeToEvent(E_UPDATE, HANDLER(UI, HandleUpdate));
-    SubscribeToEvent(E_SCREENMODE, HANDLER(UI, HandleScreenMode));
-    SubscribeToEvent(SystemUI::E_CONSOLECLOSED, HANDLER(UI, HandleConsoleClosed));
-
-    SubscribeToEvent(E_TOUCHBEGIN, HANDLER(UI, HandleTouchBegin));
-    SubscribeToEvent(E_TOUCHEND, HANDLER(UI, HandleTouchEnd));
-    SubscribeToEvent(E_TOUCHMOVE, HANDLER(UI, HandleTouchMove));
-
-    SubscribeToEvent(E_RENDERUPDATE, HANDLER(UI, HandleRenderUpdate));
 
     tb::TBWidgetListener::AddGlobalListener(this);
 
     initialized_ = true;
-
-    SystemUI::SystemUI* systemUI = new SystemUI::SystemUI(context_);
-    context_->RegisterSubsystem(systemUI);
-    systemUI->CreateConsoleAndDebugHud();
 
     //TB_DEBUG_SETTING(LAYOUT_BOUNDS) = 1;
 }
@@ -288,7 +293,7 @@ void UI::SetDefaultFont(const String& name, int size)
 {
     tb::TBFontDescription fd;
     fd.SetID(tb::TBIDC(name.CString()));
-    fd.SetSize(tb::g_tb_skin->GetDimensionConverter()->DpToPx(12));
+    fd.SetSize(tb::g_tb_skin->GetDimensionConverter()->DpToPx(size));
     tb::g_font_manager->SetDefaultFontDescription(fd);
 
     // Create the font now.
@@ -305,160 +310,96 @@ void UI::AddFont(const String& fontFile, const String& name)
     tb::g_font_manager->AddFontInfo(fontFile.CString(), name.CString());
 }
 
-void UI::Render(VertexBuffer* buffer, const PODVector<UIBatch>& batches, unsigned batchStart, unsigned batchEnd)
+void UI::AddUIView(UIView* uiView)
 {
+    rootWidget_->AddChild(uiView->GetInternalWidget());
+    uiViews_.Push(SharedPtr<UIView>(uiView));
 
-    if (batches.Empty())
-        return;
-
-    Vector2 invScreenSize(1.0f / (float)graphics_->GetWidth(), 1.0f / (float)graphics_->GetHeight());
-    Vector2 scale(2.0f * invScreenSize.x_, -2.0f * invScreenSize.y_);
-    Vector2 offset(-1.0f, 1.0f);
-
-    Matrix4 projection(Matrix4::IDENTITY);
-    projection.m00_ = scale.x_;
-    projection.m03_ = offset.x_;
-    projection.m11_ = scale.y_;
-    projection.m13_ = offset.y_;
-    projection.m22_ = 1.0f;
-    projection.m23_ = 0.0f;
-    projection.m33_ = 1.0f;
-
-    graphics_->ClearParameterSources();
-    graphics_->SetColorWrite(true);
-    graphics_->SetCullMode(CULL_NONE);
-    graphics_->SetDepthTest(CMP_ALWAYS);
-    graphics_->SetDepthWrite(false);
-    graphics_->SetFillMode(FILL_SOLID);
-    graphics_->SetStencilTest(false);
-
-    graphics_->ResetRenderTargets();
-
-    graphics_->SetVertexBuffer(buffer);
-
-    ShaderVariation* noTextureVS = graphics_->GetShader(VS, "Basic", "VERTEXCOLOR");
-    ShaderVariation* diffTextureVS = graphics_->GetShader(VS, "Basic", "DIFFMAP VERTEXCOLOR");
-    ShaderVariation* noTexturePS = graphics_->GetShader(PS, "Basic", "VERTEXCOLOR");
-    ShaderVariation* diffTexturePS = graphics_->GetShader(PS, "Basic", "DIFFMAP VERTEXCOLOR");
-    ShaderVariation* diffMaskTexturePS = graphics_->GetShader(PS, "Basic", "DIFFMAP ALPHAMASK VERTEXCOLOR");
-    ShaderVariation* alphaTexturePS = graphics_->GetShader(PS, "Basic", "ALPHAMAP VERTEXCOLOR");
-
-    unsigned alphaFormat = Graphics::GetAlphaFormat();
-
-    for (unsigned i = batchStart; i < batchEnd; ++i)
+    if (!focusedView_ && uiView)
     {
-        const UIBatch& batch = batches[i];
-        if (batch.vertexStart_ == batch.vertexEnd_)
-            continue;
-
-        ShaderVariation* ps;
-        ShaderVariation* vs;
-
-        if (!batch.texture_)
-        {
-            ps = noTexturePS;
-            vs = noTextureVS;
-        }
-        else
-        {
-            // If texture contains only an alpha channel, use alpha shader (for fonts)
-            vs = diffTextureVS;
-
-            if (batch.texture_->GetFormat() == alphaFormat)
-                ps = alphaTexturePS;
-            else if (batch.blendMode_ != BLEND_ALPHA && batch.blendMode_ != BLEND_ADDALPHA && batch.blendMode_ != BLEND_PREMULALPHA)
-                ps = diffMaskTexturePS;
-            else
-                ps = diffTexturePS;
-        }
-
-        graphics_->SetShaders(vs, ps);
-        if (graphics_->NeedParameterUpdate(SP_OBJECT, this))
-            graphics_->SetShaderParameter(VSP_MODEL, Matrix3x4::IDENTITY);
-        if (graphics_->NeedParameterUpdate(SP_CAMERA, this))
-            graphics_->SetShaderParameter(VSP_VIEWPROJ, projection);
-        if (graphics_->NeedParameterUpdate(SP_MATERIAL, this))
-            graphics_->SetShaderParameter(PSP_MATDIFFCOLOR, Color(1.0f, 1.0f, 1.0f, 1.0f));
-
-        graphics_->SetBlendMode(batch.blendMode_);
-        graphics_->SetScissorTest(true, batch.scissor_);
-        graphics_->SetTexture(0, batch.texture_);
-        graphics_->Draw(TRIANGLE_LIST, batch.vertexStart_ / UI_VERTEX_SIZE, (batch.vertexEnd_ - batch.vertexStart_) /
-            UI_VERTEX_SIZE);
+        uiView->SetFocus();
     }
 }
 
-void UI::SetVertexData(VertexBuffer* dest, const PODVector<float>& vertexData)
+void UI::RemoveUIView(UIView* uiView)
 {
-    if (vertexData.Empty())
-        return;
+    if (focusedView_ == uiView)
+    {
+        SetFocusedView(0);
+    }
 
-    // Update quad geometry into the vertex buffer
-    // Resize the vertex buffer first if too small or much too large
-    unsigned numVertices = vertexData.Size() / UI_VERTEX_SIZE;
-    if (dest->GetVertexCount() < numVertices || dest->GetVertexCount() > numVertices * 2)
-        dest->SetSize(numVertices, MASK_POSITION | MASK_COLOR | MASK_TEXCOORD1, true);
-
-    dest->SetData(&vertexData[0]);
+    rootWidget_->RemoveChild(uiView->GetInternalWidget());
+    uiViews_.Remove(SharedPtr<UIView>(uiView));
 }
 
+void UI::SetFocusedView(UIView* uiView)
+{
+    if (focusedView_ == uiView)
+    {
+        return;
+    }
+
+    focusedView_ = uiView;
+
+    if (focusedView_)
+    {
+        focusedView_->BecomeFocused();
+    }
+    else
+    {
+        focusedView_ = 0;
+
+        // look for first auto activated UIView, and recurse
+        Vector<SharedPtr<UIView>>::Iterator itr = uiViews_.Begin();
+
+        while (itr != uiViews_.End())
+        {
+            if ((*itr)->GetAutoFocus())
+            {
+                SetFocusedView(*itr);
+                return;
+            }
+
+            itr++;
+        }
+
+    }
+}
 
 void UI::Render(bool resetRenderTargets)
 {
-    SetVertexData(vertexBuffer_, vertexData_);
-    Render(vertexBuffer_, batches_, 0, batches_.Size());
+    Vector<SharedPtr<UIView>>::Iterator itr = uiViews_.Begin();
 
-    GetSubsystem<SystemUI::SystemUI>()->Render();
-}
+    while (itr != uiViews_.End())
+    {
+        (*itr)->Render(resetRenderTargets);
 
-void UI::HandleRenderUpdate(StringHash eventType, VariantMap& eventData)
-{
-    // Get rendering batches from the non-modal UI elements
-    batches_.Clear();
-    vertexData_.Clear();
-
-    tb::TBRect rect = rootWidget_->GetRect();
-
-    IntRect currentScissor = IntRect(0, 0, rect.w, rect.h);
-    GetBatches(batches_, vertexData_, currentScissor);
+        itr++;
+    }
 
 }
 
-void UI::GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexData, const IntRect& currentScissor)
-{
-    //if (!initialized_)
-    //    return;
 
+void UI::HandlePostUpdate(StringHash eventType, VariantMap& eventData)
+{
+    SendEvent(E_UIUPDATE);
+
+    TBMessageHandler::ProcessMessages();
     TBAnimationManager::Update();
 
     rootWidget_->InvokeProcessStates();
     rootWidget_->InvokeProcess();
-
-    tb::g_renderer->BeginPaint(rootWidget_->GetRect().w, rootWidget_->GetRect().h);
-
-    renderer_->currentScissor_ = currentScissor;
-    renderer_->batches_ = &batches;
-    renderer_->vertexData_ = &vertexData;
-    rootWidget_->InvokePaint(tb::TBWidget::PaintProps());
-
-    tb::g_renderer->EndPaint();
 }
 
-void UI::SubmitBatchVertexData(Texture* texture, const PODVector<float>& vertexData)
+void UI::HandleRenderUpdate(StringHash eventType, VariantMap& eventData)
 {
-    UIBatch b(BLEND_ALPHA , renderer_->currentScissor_, texture, &vertexData_);
+    Vector<SharedPtr<UIView>>::Iterator itr = uiViews_.Begin();
 
-    unsigned begin = b.vertexData_->Size();
-    b.vertexData_->Resize(begin + vertexData.Size());
-    float* dest = &(b.vertexData_->At(begin));
-    b.vertexEnd_ = b.vertexData_->Size();
-
-    for (unsigned i = 0; i < vertexData.Size(); i++, dest++)
+    while (itr != uiViews_.End())
     {
-        *dest = vertexData[i];
+        (*itr)->UpdateUIBatches();
+        itr++;
     }
-
-    UIBatch::AddOrMerge(b, batches_);
 
 }
 
@@ -471,7 +412,7 @@ void UI::TBFileReader(const char* filename, void** data, unsigned* length)
     SharedPtr<File> file = cache->GetFile(filename);
     if (!file || !file->IsOpen())
     {
-        LOGERRORF("UI::TBFileReader: Unable to load file: %s", filename);
+        ATOMIC_LOGERRORF("UI::TBFileReader: Unable to load file: %s", filename);
         return;
     }
 
@@ -529,7 +470,6 @@ void UI::HandleScreenMode(StringHash eventType, VariantMap& eventData)
 {
     using namespace ScreenMode;
     rootWidget_->SetSize(eventData[P_WIDTH].GetInt(), eventData[P_HEIGHT].GetInt());
-    //SetSize(eventData[P_WIDTH].GetInt(), eventData[P_HEIGHT].GetInt());
 }
 
 void UI::HandleUpdate(StringHash eventType, VariantMap& eventData)
@@ -539,7 +479,7 @@ void UI::HandleUpdate(StringHash eventType, VariantMap& eventData)
         exitRequested_ = false;
         return;
     }
-    
+
     tooltipHoverTime_ += eventData[Update::P_TIMESTEP].GetFloat();
 
     if (tooltipHoverTime_ >= 0.5f)
@@ -567,13 +507,11 @@ void UI::HandleUpdate(StringHash eventType, VariantMap& eventData)
             tooltip_->Show(mousePosition.x_ + 8, mousePosition.y_ + 8);
         }
     }
-    else 
+    else
     {
         if (tooltip_) tooltip_->Close();
     }
 
-    SendEvent(E_UIUPDATE);
-    TBMessageHandler::ProcessMessages();
 }
 
 UIWidget* UI::GetHoveredWidget()
@@ -590,6 +528,7 @@ bool UI::UnwrapWidget(tb::TBWidget* widget)
 {
     if (widgetWrap_.Contains(widget))
     {
+        widget->SetDelegate(0);
         widgetWrap_.Erase(widget);
         return true;
     }
@@ -604,29 +543,29 @@ void UI::PruneUnreachableWidgets()
 
     for (itr = widgetWrap_.Begin(); itr != widgetWrap_.End(); )
     {
-        if ((*itr).first_->GetParent() || (*itr).second_->JSGetHeapPtr())
+        if ((*itr).first_->GetParent() || (*itr).second_->Refs() > 1)
         {
             itr++;
             continue;
         }
 
-        tb::TBWidget* toDelete = (*itr).first_;
-
         itr.GotoNext();
 
+        VariantMap eventData;
+        eventData[WidgetDeleted::P_WIDGET] = (UIWidget*) (*itr).second_;
+        (*itr).second_->SendEvent(E_WIDGETDELETED, eventData);
+
+        tb::TBWidget* toDelete = (*itr).first_;
+        UnwrapWidget(toDelete);
         delete toDelete;
 
-        // this will likely be flagged by valgrind as accessing invalid memory
-        assert(!widgetWrap_.Contains(toDelete));
     }
 }
 
 void UI::WrapWidget(UIWidget* widget, tb::TBWidget* tbwidget)
 {
     assert (!widgetWrap_.Contains(tbwidget));
-
     widgetWrap_[tbwidget] = widget;
-
 }
 
 UIWidget* UI::WrapWidget(tb::TBWidget* widget)
@@ -645,7 +584,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIPopupWindow* popupWindow = new UIPopupWindow(context_, false);
         popupWindow->SetWidget(widget);
-        widgetWrap_[widget] = popupWindow;
+        WrapWidget(popupWindow, widget);
         return popupWindow;
     }
 
@@ -653,7 +592,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIDimmer* dimmer = new UIDimmer(context_, false);
         dimmer->SetWidget(widget);
-        widgetWrap_[widget] = dimmer;
+        WrapWidget(dimmer, widget);
         return dimmer;
     }
 
@@ -661,7 +600,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIScrollContainer* container = new UIScrollContainer(context_, false);
         container->SetWidget(widget);
-        widgetWrap_[widget] = container;
+        WrapWidget(container, widget);
         return container;
     }
 
@@ -669,15 +608,47 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIInlineSelect* select = new UIInlineSelect(context_, false);
         select->SetWidget(widget);
-        widgetWrap_[widget] = select;
+        WrapWidget(select, widget);
         return select;
+    }
+
+    if (widget->IsOfType<TBSlider>())
+    {
+        UISlider* slider = new UISlider(context_, false);
+        slider->SetWidget(widget);
+        WrapWidget(slider, widget);
+        return slider;
+    }
+
+    if (widget->IsOfType<TBScrollBar>())
+    {
+        UIScrollBar* slider = new UIScrollBar(context_, false);
+        slider->SetWidget(widget);
+        WrapWidget(slider, widget);
+        return slider;
+    }
+
+    if (widget->IsOfType<TBColorWidget>())
+    {
+        UIColorWidget* colorWidget = new UIColorWidget(context_, false);
+        colorWidget->SetWidget(widget);
+        WrapWidget(colorWidget, widget);
+        return colorWidget;
+    }
+
+    if (widget->IsOfType<TBColorWheel>())
+    {
+        UIColorWheel* colorWheel = new UIColorWheel(context_, false);
+        colorWheel->SetWidget(widget);
+        WrapWidget(colorWheel, widget);
+        return colorWheel;
     }
 
     if (widget->IsOfType<TBSection>())
     {
         UISection* section = new UISection(context_, false);
         section->SetWidget(widget);
-        widgetWrap_[widget] = section;
+        WrapWidget(section, widget);
         return section;
     }
 
@@ -685,7 +656,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UISeparator* sep = new UISeparator(context_, false);
         sep->SetWidget(widget);
-        widgetWrap_[widget] = sep;
+        WrapWidget(sep, widget);
         return sep;
     }
 
@@ -693,7 +664,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIContainer* container = new UIContainer(context_, false);
         container->SetWidget(widget);
-        widgetWrap_[widget] = container;
+        WrapWidget(container, widget);
         return container;
     }
 
@@ -701,7 +672,15 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UISelectDropdown* select = new UISelectDropdown(context_, false);
         select->SetWidget(widget);
-        widgetWrap_[widget] = select;
+        WrapWidget(select, widget);
+        return select;
+    }
+
+    if (widget->IsOfType<TBPulldownMenu>())
+    {
+        UIPulldownMenu* select = new UIPulldownMenu(context_, false);
+        select->SetWidget(widget);
+        WrapWidget(select, widget);
         return select;
     }
 
@@ -713,7 +692,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
 
         UIButton* button = new UIButton(context_, false);
         button->SetWidget(widget);
-        widgetWrap_[widget] = button;
+        WrapWidget(button, widget);
         return button;
     }
 
@@ -721,7 +700,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UITextField* textfield = new UITextField(context_, false);
         textfield->SetWidget(widget);
-        widgetWrap_[widget] = textfield;
+        WrapWidget(textfield, widget);
         return textfield;
     }
 
@@ -729,7 +708,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIEditField* editfield = new UIEditField(context_, false);
         editfield->SetWidget(widget);
-        widgetWrap_[widget] = editfield;
+        WrapWidget(editfield, widget);
         return editfield;
     }
 
@@ -737,7 +716,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UISkinImage* skinimage = new UISkinImage(context_, "", false);
         skinimage->SetWidget(widget);
-        widgetWrap_[widget] = skinimage;
+        WrapWidget(skinimage, widget);
         return skinimage;
     }
 
@@ -745,14 +724,14 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIImageWidget* imagewidget = new UIImageWidget(context_, false);
         imagewidget->SetWidget(widget);
-        widgetWrap_[widget] = imagewidget;
+        WrapWidget(imagewidget, widget);
         return imagewidget;
     }
     if (widget->IsOfType<TBClickLabel>())
     {
         UIClickLabel* nwidget = new UIClickLabel(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -760,7 +739,23 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UICheckBox* nwidget = new UICheckBox(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
+        return nwidget;
+    }
+
+    if (widget->IsOfType<TBRadioButton>())
+    {
+        UIRadioButton* nwidget = new UIRadioButton(context_, false);
+        nwidget->SetWidget(widget);
+        WrapWidget(nwidget, widget);
+        return nwidget;
+    }
+
+    if (widget->IsOfType<TBBarGraph>())
+    {
+        UIBargraph* nwidget = new UIBargraph(context_, false);
+        nwidget->SetWidget(widget);
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -768,7 +763,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UISelectList* nwidget = new UISelectList(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -776,7 +771,23 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIMessageWindow* nwidget = new UIMessageWindow(context_, NULL, "", false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
+        return nwidget;
+    }
+
+    if (widget->IsOfType<TBPromptWindow>())
+    {
+        UIPromptWindow* nwidget = new UIPromptWindow(context_, NULL, "", false);
+        nwidget->SetWidget(widget);
+        WrapWidget(nwidget, widget);
+        return nwidget;
+    }
+
+    if (widget->IsOfType<TBFinderWindow>())
+    {
+        UIFinderWindow* nwidget = new UIFinderWindow(context_, NULL, "", false);
+        nwidget->SetWidget(widget);
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -784,7 +795,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UITabContainer* nwidget = new UITabContainer(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -792,7 +803,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UISceneView* nwidget = new UISceneView(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -801,7 +812,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UILayout* layout = new UILayout(context_, (UI_AXIS) widget->GetAxis(), false);
         layout->SetWidget(widget);
-        widgetWrap_[widget] = layout;
+        WrapWidget(layout, widget);
         return layout;
     }
 
@@ -809,7 +820,7 @@ UIWidget* UI::WrapWidget(tb::TBWidget* widget)
     {
         UIWidget* nwidget = new UIWidget(context_, false);
         nwidget->SetWidget(widget);
-        widgetWrap_[widget] = nwidget;
+        WrapWidget(nwidget, widget);
         return nwidget;
     }
 
@@ -827,6 +838,17 @@ bool UI::OnWidgetDying(tb::TBWidget *widget)
     return false;
 }
 
+void UI::OnWindowClose(tb::TBWindow *window)
+{
+    if (widgetWrap_.Contains(window))
+    {
+        UIWidget* widget = widgetWrap_[window];
+        VariantMap eventData;
+        eventData[WindowClosed::P_WINDOW] = widget;
+        widget->SendEvent(E_WINDOWCLOSED, eventData);
+    }
+}
+
 void UI::OnWidgetFocusChanged(TBWidget *widget, bool focused)
 {
     if (widgetWrap_.Contains(widget))
@@ -841,20 +863,20 @@ void UI::OnWidgetFocusChanged(TBWidget *widget, bool focused)
 
 void UI::ShowDebugHud(bool value)
 {
-    SystemUI::DebugHud* hud = GetSubsystem<SystemUI::DebugHud>();
+    DebugHud* hud = GetSubsystem<DebugHud>();
 
     if (!hud)
         return;
 
     if (value)
-        hud->SetMode(SystemUI::DEBUGHUD_SHOW_ALL);
+        hud->SetMode(DEBUGHUD_SHOW_ALL);
     else
-        hud->SetMode(SystemUI::DEBUGHUD_SHOW_NONE);
+        hud->SetMode(DEBUGHUD_SHOW_NONE);
 }
 
 void UI::ToggleDebugHud()
 {
-    SystemUI::DebugHud* hud = GetSubsystem<SystemUI::DebugHud>();
+    DebugHud* hud = GetSubsystem<DebugHud>();
 
     if (!hud)
         return;
@@ -862,9 +884,50 @@ void UI::ToggleDebugHud()
     hud->ToggleAll();
 }
 
+void UI::SetDebugHudExtents(bool useRootExtent, const IntVector2& position, const IntVector2& size)
+{
+    DebugHud* hud = GetSubsystem<DebugHud>();
+
+    if (!hud)
+        return;
+
+    hud->SetExtents(useRootExtent, position, size);
+
+}
+
+void UI::CycleDebugHudMode()
+{
+    DebugHud* hud = GetSubsystem<DebugHud>();
+
+    if (!hud)
+        return;
+
+    hud->CycleMode();
+}
+
+void UI::SetDebugHudProfileMode(DebugHudProfileMode mode)
+{
+    DebugHud* hud = GetSubsystem<DebugHud>();
+
+    if (!hud)
+        return;
+
+    hud->SetProfilerMode(mode);
+}
+
+void UI::SetDebugHudRefreshInterval(float seconds)
+{
+    DebugHud* hud = GetSubsystem<DebugHud>();
+
+    if (!hud)
+        return;
+
+    hud->SetProfilerInterval(seconds);
+}
+
 void UI::ShowConsole(bool value)
 {
-    SystemUI::Console* console = GetSubsystem<SystemUI::Console>();
+    Console* console = GetSubsystem<Console>();
 
     if (!console)
         return;
@@ -875,7 +938,7 @@ void UI::ShowConsole(bool value)
 
 void UI::ToggleConsole()
 {
-    SystemUI::Console* console = GetSubsystem<SystemUI::Console>();
+    Console* console = GetSubsystem<Console>();
 
     if (!console)
         return;
@@ -889,21 +952,16 @@ void UI::HandleConsoleClosed(StringHash eventType, VariantMap& eventData)
     consoleVisible_ = false;
 }
 
-SystemUI::MessageBox* UI::ShowSystemMessageBox(const String& title, const String& message)
+MessageBox* UI::ShowSystemMessageBox(const String& title, const String& message)
 {
-
-    ResourceCache* cache = GetSubsystem<ResourceCache>();
-    XMLFile* xmlFile = cache->GetResource<XMLFile>("UI/DefaultStyle.xml");
-
-    SystemUI::MessageBox* messageBox = new SystemUI::MessageBox(context_, message, title, 0, xmlFile);
-
+    MessageBox* messageBox = new MessageBox(context_, message, title);
     return messageBox;
-
-
 }
 
 UIWidget* UI::GetWidgetAt(int x, int y, bool include_children)
 {
+    if (!initialized_)
+        return 0;
     return WrapWidget(rootWidget_->GetWidgetAt(x, y, include_children));
 }
 
@@ -912,5 +970,14 @@ bool UI::OnWidgetInvokeEvent(tb::TBWidget *widget, const tb::TBWidgetEvent &ev)
     return false;
 }
 
+void UI::DebugShowSettingsWindow(UIWidget* parent)
+{
+
+#ifdef ATOMIC_DEBUG
+    if (parent && parent->GetInternalWidget())
+        tb::ShowDebugInfoSettingsWindow(parent->GetInternalWidget());
+#endif
+
+}
 
 }

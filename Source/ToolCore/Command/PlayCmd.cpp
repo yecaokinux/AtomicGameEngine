@@ -1,8 +1,23 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 #include <Poco/Process.h>
@@ -32,7 +47,7 @@ PlayCmd::~PlayCmd()
 
 }
 
-bool PlayCmd::Parse(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
+bool PlayCmd::ParseInternal(const Vector<String>& arguments, unsigned startIndex, String& errorMsg)
 {
     String argument = arguments[startIndex].ToLower();
     String value = startIndex + 1 < arguments.Size() ? arguments[startIndex + 1] : String::EMPTY;
@@ -74,7 +89,7 @@ bool PlayCmd::LaunchPlayerProcess(const String& command, const Vector<String>& a
 
 void PlayCmd::Run()
 {
-    LOGINFOF("Playing project");
+    ATOMIC_LOGINFOF("Playing project");
 
     ToolSystem* tsystem = GetSubsystem<ToolSystem>();
     ToolEnvironment* env = GetSubsystem<ToolCore::ToolEnvironment>();
@@ -94,8 +109,6 @@ void PlayCmd::Run()
     resourcePaths.Join(paths, "!");
 
     Vector<String> vargs;
-
-    //String args = ToString("--editor-resource-paths \"%s\"", resourcePaths.CString());
 
     String args = ToString("--player --project \"%s\"", AddTrailingSlash(project->GetProjectPath()).CString());
 

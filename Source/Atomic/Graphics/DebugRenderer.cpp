@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #include "../Core/Context.h"
 #include "../Core/CoreEvents.h"
 #include "../Core/Profiler.h"
+#include "../Graphics/AnimatedModel.h"
 #include "../Graphics/Camera.h"
 #include "../Graphics/DebugRenderer.h"
 #include "../Graphics/Graphics.h"
@@ -36,11 +37,6 @@
 
 #include "../DebugNew.h"
 
-#ifdef ATOMIC_3D
-#include "../Atomic3D/AnimatedModel.h"
-#else
-#include "../Scene/Node.h"
-#endif
 namespace Atomic
 {
 
@@ -52,11 +48,21 @@ static const unsigned MAX_LINES = 1000000;
 static const unsigned MAX_TRIANGLES = 100000;
 
 DebugRenderer::DebugRenderer(Context* context) :
-    Component(context)
+    Component(context),
+    // ATOMIC BEGIN
+    position1_(0, 0, 0),
+    position2_(0, 0, 0),
+    position3_(0, 0, 0),
+    numGridLines_(100),
+    scale_(0),
+    lineLength_(0),
+    offset_(0),
+    scaleIncrement_(10)
+  // ATOMIC END
 {
     vertexBuffer_ = new VertexBuffer(context_);
 
-    SubscribeToEvent(E_ENDFRAME, HANDLER(DebugRenderer, HandleEndFrame));
+    SubscribeToEvent(E_ENDFRAME, ATOMIC_HANDLER(DebugRenderer, HandleEndFrame));
 }
 
 DebugRenderer::~DebugRenderer()
@@ -66,6 +72,16 @@ DebugRenderer::~DebugRenderer()
 void DebugRenderer::RegisterObject(Context* context)
 {
     context->RegisterFactory<DebugRenderer>(SUBSYSTEM_CATEGORY);
+    ATOMIC_ACCESSOR_ATTRIBUTE("Line Antialias", GetLineAntiAlias, SetLineAntiAlias, bool, false, AM_DEFAULT);
+}
+
+void DebugRenderer::SetLineAntiAlias(bool enable)
+{
+    if (enable != lineAntiAlias_)
+    {
+        lineAntiAlias_ = enable;
+        MarkNetworkUpdate();
+    }
 }
 
 void DebugRenderer::SetView(Camera* camera)
@@ -75,6 +91,7 @@ void DebugRenderer::SetView(Camera* camera)
 
     view_ = camera->GetView();
     projection_ = camera->GetProjection();
+    gpuProjection_ = camera->GetGPUProjection();
     frustum_ = camera->GetFrustum();
 }
 
@@ -110,6 +127,18 @@ void DebugRenderer::AddTriangle(const Vector3& v1, const Vector3& v2, const Vect
         noDepthTriangles_.Push(DebugTriangle(v1, v2, v3, color));
 }
 
+void DebugRenderer::AddPolygon(const Vector3& v1, const Vector3& v2, const Vector3& v3, const Vector3& v4, const Color& color, bool depthTest)
+{
+    AddTriangle(v1, v2, v3, color, depthTest);
+    AddTriangle(v3, v4, v1, color, depthTest);
+}
+
+void DebugRenderer::AddPolygon(const Vector3& v1, const Vector3& v2, const Vector3& v3, const Vector3& v4, unsigned color, bool depthTest)
+{
+    AddTriangle(v1, v2, v3, color, depthTest);
+    AddTriangle(v3, v4, v1, color, depthTest);
+}
+
 void DebugRenderer::AddNode(Node* node, float scale, bool depthTest)
 {
     if (!node)
@@ -123,7 +152,7 @@ void DebugRenderer::AddNode(Node* node, float scale, bool depthTest)
     AddLine(start, start + rotation * (scale * Vector3::FORWARD), Color::BLUE.ToUInt(), depthTest);
 }
 
-void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Color& color, bool depthTest)
+void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Color& color, bool depthTest, bool solid)
 {
     const Vector3& min = box.min_;
     const Vector3& max = box.max_;
@@ -137,21 +166,33 @@ void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Color& color, b
 
     unsigned uintColor = color.ToUInt();
 
-    AddLine(min, v1, uintColor, depthTest);
-    AddLine(v1, v2, uintColor, depthTest);
-    AddLine(v2, v3, uintColor, depthTest);
-    AddLine(v3, min, uintColor, depthTest);
-    AddLine(v4, v5, uintColor, depthTest);
-    AddLine(v5, max, uintColor, depthTest);
-    AddLine(max, v6, uintColor, depthTest);
-    AddLine(v6, v4, uintColor, depthTest);
-    AddLine(min, v4, uintColor, depthTest);
-    AddLine(v1, v5, uintColor, depthTest);
-    AddLine(v2, max, uintColor, depthTest);
-    AddLine(v3, v6, uintColor, depthTest);
+    if (!solid)
+    {
+        AddLine(min, v1, uintColor, depthTest);
+        AddLine(v1, v2, uintColor, depthTest);
+        AddLine(v2, v3, uintColor, depthTest);
+        AddLine(v3, min, uintColor, depthTest);
+        AddLine(v4, v5, uintColor, depthTest);
+        AddLine(v5, max, uintColor, depthTest);
+        AddLine(max, v6, uintColor, depthTest);
+        AddLine(v6, v4, uintColor, depthTest);
+        AddLine(min, v4, uintColor, depthTest);
+        AddLine(v1, v5, uintColor, depthTest);
+        AddLine(v2, max, uintColor, depthTest);
+        AddLine(v3, v6, uintColor, depthTest);
+    }
+    else
+    {
+        AddPolygon(min, v1, v2, v3, uintColor, depthTest);
+        AddPolygon(v4, v5, max, v6, uintColor, depthTest);
+        AddPolygon(min, v4, v6, v3, uintColor, depthTest);
+        AddPolygon(v1, v5, max, v2, uintColor, depthTest);
+        AddPolygon(v3, v2, max, v6, uintColor, depthTest);
+        AddPolygon(min, v1, v5, v4, uintColor, depthTest);
+    }
 }
 
-void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Matrix3x4& transform, const Color& color, bool depthTest)
+void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Matrix3x4& transform, const Color& color, bool depthTest, bool solid)
 {
     const Vector3& min = box.min_;
     const Vector3& max = box.max_;
@@ -167,20 +208,31 @@ void DebugRenderer::AddBoundingBox(const BoundingBox& box, const Matrix3x4& tran
 
     unsigned uintColor = color.ToUInt();
 
-    AddLine(v0, v1, uintColor, depthTest);
-    AddLine(v1, v2, uintColor, depthTest);
-    AddLine(v2, v3, uintColor, depthTest);
-    AddLine(v3, v0, uintColor, depthTest);
-    AddLine(v4, v5, uintColor, depthTest);
-    AddLine(v5, v7, uintColor, depthTest);
-    AddLine(v7, v6, uintColor, depthTest);
-    AddLine(v6, v4, uintColor, depthTest);
-    AddLine(v0, v4, uintColor, depthTest);
-    AddLine(v1, v5, uintColor, depthTest);
-    AddLine(v2, v7, uintColor, depthTest);
-    AddLine(v3, v6, uintColor, depthTest);
+    if (!solid)
+    {
+        AddLine(v0, v1, uintColor, depthTest);
+        AddLine(v1, v2, uintColor, depthTest);
+        AddLine(v2, v3, uintColor, depthTest);
+        AddLine(v3, v0, uintColor, depthTest);
+        AddLine(v4, v5, uintColor, depthTest);
+        AddLine(v5, v7, uintColor, depthTest);
+        AddLine(v7, v6, uintColor, depthTest);
+        AddLine(v6, v4, uintColor, depthTest);
+        AddLine(v0, v4, uintColor, depthTest);
+        AddLine(v1, v5, uintColor, depthTest);
+        AddLine(v2, v7, uintColor, depthTest);
+        AddLine(v3, v6, uintColor, depthTest);
+    }
+    else
+    {
+        AddPolygon(v0, v1, v2, v3, uintColor, depthTest);
+        AddPolygon(v4, v5, v7, v6, uintColor, depthTest);
+        AddPolygon(v0, v4, v6, v3, uintColor, depthTest);
+        AddPolygon(v1, v5, v7, v2, uintColor, depthTest);
+        AddPolygon(v3, v2, v7, v6, uintColor, depthTest);
+        AddPolygon(v0, v1, v5, v4, uintColor, depthTest);
+    }
 }
-
 
 void DebugRenderer::AddFrustum(const Frustum& frustum, const Color& color, bool depthTest)
 {
@@ -216,32 +268,77 @@ void DebugRenderer::AddPolyhedron(const Polyhedron& poly, const Color& color, bo
     }
 }
 
-static Vector3 PointOnSphere(const Sphere& sphere, unsigned theta, unsigned phi)
-{
-    return Vector3(
-        sphere.center_.x_ + sphere.radius_ * Sin((float)theta) * Sin((float)phi),
-        sphere.center_.y_ + sphere.radius_ * Cos((float)phi),
-        sphere.center_.z_ + sphere.radius_ * Cos((float)theta) * Sin((float)phi)
-    );
-}
-
 void DebugRenderer::AddSphere(const Sphere& sphere, const Color& color, bool depthTest)
 {
     unsigned uintColor = color.ToUInt();
 
-    for (unsigned j = 0; j < 180; j += 45)
+    for (float j = 0; j < 180; j += 45)
     {
-        for (unsigned i = 0; i < 360; i += 45)
+        for (float i = 0; i < 360; i += 45)
         {
-            Vector3 p1 = PointOnSphere(sphere, i, j);
-            Vector3 p2 = PointOnSphere(sphere, i + 45, j);
-            Vector3 p3 = PointOnSphere(sphere, i, j + 45);
-            Vector3 p4 = PointOnSphere(sphere, i + 45, j + 45);
+            Vector3 p1 = sphere.GetPoint(i, j);
+            Vector3 p2 = sphere.GetPoint(i + 45, j);
+            Vector3 p3 = sphere.GetPoint(i, j + 45);
+            Vector3 p4 = sphere.GetPoint(i + 45, j + 45);
 
             AddLine(p1, p2, uintColor, depthTest);
             AddLine(p3, p4, uintColor, depthTest);
             AddLine(p1, p3, uintColor, depthTest);
             AddLine(p2, p4, uintColor, depthTest);
+        }
+    }
+}
+
+void DebugRenderer::AddSphereSector(const Sphere& sphere, const Quaternion& rotation, float angle,
+    bool drawLines, const Color& color, bool depthTest)
+{
+    if (angle <= 0.0f)
+        return;
+    else if (angle >= 360.0f)
+    {
+        AddSphere(sphere, color, depthTest);
+        return;
+    }
+
+    static const unsigned numCircleSegments = 8;
+    static const unsigned numLines = 4;
+    static const float arcStep = 45.0f;
+
+    const unsigned uintColor = color.ToUInt();
+    const float halfAngle = 0.5f * angle;
+    const unsigned numArcSegments = static_cast<unsigned>(Ceil(halfAngle / arcStep)) + 1;
+
+    // Draw circle
+    for (unsigned j = 0; j < numCircleSegments; ++j)
+    {
+        AddLine(
+            sphere.center_ + rotation * sphere.GetLocalPoint(j * 360.0f / numCircleSegments, halfAngle),
+            sphere.center_ + rotation * sphere.GetLocalPoint((j + 1) * 360.0f / numCircleSegments, halfAngle),
+            uintColor);
+    }
+
+    // Draw arcs
+    const unsigned step = numCircleSegments / numLines;
+    for (unsigned i = 0; i < numArcSegments - 1; ++i)
+    {
+        for (unsigned j = 0; j < numCircleSegments; j += step)
+        {
+            const float nextPhi = i + 1 == numArcSegments - 1 ? halfAngle : (i + 1) * arcStep;
+            AddLine(
+                sphere.center_ + rotation * sphere.GetLocalPoint(j * 360.0f / numCircleSegments, i * arcStep),
+                sphere.center_ + rotation * sphere.GetLocalPoint(j * 360.0f / numCircleSegments, nextPhi),
+                uintColor);
+        }
+    }
+
+    // Draw lines
+    if (drawLines)
+    {
+        for (unsigned j = 0; j < numCircleSegments; j += step)
+        {
+            AddLine(sphere.center_,
+                sphere.center_ + rotation * sphere.GetLocalPoint(j * 360.0f / numCircleSegments, halfAngle),
+                uintColor);
         }
     }
 }
@@ -252,10 +349,10 @@ void DebugRenderer::AddCylinder(const Vector3& position, float radius, float hei
     Vector3 heightVec(0, height, 0);
     Vector3 offsetXVec(radius, 0, 0);
     Vector3 offsetZVec(0, 0, radius);
-    for (unsigned i = 0; i < 360; i += 45)
+    for (float i = 0; i < 360; i += 45)
     {
-        Vector3 p1 = PointOnSphere(sphere, i, 90);
-        Vector3 p2 = PointOnSphere(sphere, i + 45, 90);
+        Vector3 p1 = sphere.GetPoint(i, 90);
+        Vector3 p2 = sphere.GetPoint(i + 45, 90);
         AddLine(p1, p2, color, depthTest);
         AddLine(p1 + heightVec, p2 + heightVec, color, depthTest);
     }
@@ -264,8 +361,6 @@ void DebugRenderer::AddCylinder(const Vector3& position, float radius, float hei
     AddLine(position + offsetZVec, position + heightVec + offsetZVec, color, depthTest);
     AddLine(position - offsetZVec, position + heightVec - offsetZVec, color, depthTest);
 }
-
-#ifdef ATOMIC_3D
 
 void DebugRenderer::AddSkeleton(const Skeleton& skeleton, const Color& color, bool depthTest)
 {
@@ -300,8 +395,6 @@ void DebugRenderer::AddSkeleton(const Skeleton& skeleton, const Color& color, bo
         AddLine(start, end, uintColor, depthTest);
     }
 }
-
-#endif
 
 void DebugRenderer::AddTriangleMesh(const void* vertexData, unsigned vertexSize, const void* indexData, unsigned indexSize,
     unsigned indexStart, unsigned indexCount, const Matrix3x4& transform, const Color& color, bool depthTest)
@@ -348,6 +441,55 @@ void DebugRenderer::AddTriangleMesh(const void* vertexData, unsigned vertexSize,
     }
 }
 
+void DebugRenderer::AddCircle(const Vector3& center, const Vector3& normal, float radius, const Color& color, int steps, bool depthTest)
+{
+    Quaternion orientation;
+    orientation.FromRotationTo(Vector3::UP, normal.Normalized());
+    Vector3 p = orientation * Vector3(radius, 0, 0) + center;
+    unsigned uintColor = color.ToUInt();
+
+    for(int i = 1; i <= steps; ++i)
+    {
+        const float angle = (float)i / (float)steps * 360.0f;
+        Vector3 v(radius * Cos(angle), 0, radius * Sin(angle));
+        Vector3 c = orientation * v + center;
+        AddLine(p, c, uintColor, depthTest);
+        p = c;
+    }
+
+    p = center + normal * (radius / 4.0f);
+    AddLine(center, p, uintColor, depthTest);
+}
+
+void DebugRenderer::AddCross(const Vector3& center, float size, const Color& color, bool depthTest)
+{
+    unsigned uintColor = color.ToUInt();
+
+    float halfSize = size / 2.0f;
+    for (int i = 0; i < 3; ++i)
+    {
+        float start[3] = { center.x_, center.y_, center.z_ };
+        float end[3] = { center.x_, center.y_, center.z_ };
+        start[i] -= halfSize;
+        end[i] += halfSize;
+        AddLine(Vector3(start), Vector3(end), uintColor, depthTest);
+    }
+}
+
+void DebugRenderer::AddQuad(const Vector3& center, float width, float height, const Color& color, bool depthTest)
+{
+    unsigned uintColor = color.ToUInt();
+
+    Vector3 v0(center.x_ - width / 2, center.y_, center.z_ - height / 2);
+    Vector3 v1(center.x_ + width / 2, center.y_, center.z_ - height / 2);
+    Vector3 v2(center.x_ + width / 2, center.y_, center.z_ + height / 2);
+    Vector3 v3(center.x_ - width / 2, center.y_, center.z_ + height / 2);
+    AddLine(v0, v1, uintColor, depthTest);
+    AddLine(v1, v2, uintColor, depthTest);
+    AddLine(v2, v3, uintColor, depthTest);
+    AddLine(v3, v0, uintColor, depthTest);
+}
+
 void DebugRenderer::Render()
 {
     if (!HasContent())
@@ -357,7 +499,7 @@ void DebugRenderer::Render()
     // Engine does not render when window is closed or device is lost
     assert(graphics && graphics->IsInitialized() && !graphics->IsDeviceLost());
 
-    PROFILE(RenderDebugGeometry);
+    ATOMIC_PROFILE(RenderDebugGeometry);
 
     ShaderVariation* vs = graphics->GetShader(VS, "Basic", "VERTEXCOLOR");
     ShaderVariation* ps = graphics->GetShader(PS, "Basic", "VERTEXCOLOR");
@@ -449,15 +591,18 @@ void DebugRenderer::Render()
 
     vertexBuffer_->Unlock();
 
-    graphics->SetBlendMode(BLEND_REPLACE);
+    graphics->SetBlendMode(lineAntiAlias_ ? BLEND_ALPHA : BLEND_REPLACE);
     graphics->SetColorWrite(true);
     graphics->SetCullMode(CULL_NONE);
     graphics->SetDepthWrite(true);
+    graphics->SetLineAntiAlias(lineAntiAlias_);
     graphics->SetScissorTest(false);
     graphics->SetStencilTest(false);
     graphics->SetShaders(vs, ps);
     graphics->SetShaderParameter(VSP_MODEL, Matrix3x4::IDENTITY);
-    graphics->SetShaderParameter(VSP_VIEWPROJ, projection_ * view_);
+    graphics->SetShaderParameter(VSP_VIEW, view_);
+    graphics->SetShaderParameter(VSP_VIEWINV, view_.Inverse());
+    graphics->SetShaderParameter(VSP_VIEWPROJ, gpuProjection_ * view_);
     graphics->SetShaderParameter(PSP_MATDIFFCOLOR, Color(1.0f, 1.0f, 1.0f, 1.0f));
     graphics->SetVertexBuffer(vertexBuffer_);
 
@@ -479,6 +624,7 @@ void DebugRenderer::Render()
     }
 
     graphics->SetBlendMode(BLEND_ALPHA);
+    graphics->SetDepthWrite(false);
 
     if (triangles_.Size())
     {
@@ -493,6 +639,8 @@ void DebugRenderer::Render()
         graphics->SetDepthTest(CMP_ALWAYS);
         graphics->Draw(TRIANGLE_LIST, start, count);
     }
+
+    graphics->SetLineAntiAlias(false);
 }
 
 bool DebugRenderer::IsInside(const BoundingBox& box) const
@@ -527,5 +675,56 @@ void DebugRenderer::HandleEndFrame(StringHash eventType, VariantMap& eventData)
     if (noDepthTriangles_.Capacity() > noDepthTrianglesSize * 2)
         noDepthTriangles_.Reserve(noDepthTrianglesSize);
 }
+
+// ATOMIC BEGIN
+
+void DebugRenderer::CreateXAxisLines(unsigned gridColor, bool depthTest, int x, int y, int z)
+{
+    for (int i = 0; i < numGridLines_; i++)
+    {
+        position1_ = Vector3(x, y, z - offset_);
+        position2_ = Vector3(position1_.x_ + lineLength_, y, z - offset_);
+        position3_ = Vector3(position1_.x_ + -lineLength_, y, z - offset_);
+
+        AddLine(position1_, position2_, gridColor, depthTest);
+        AddLine(position3_, position1_, gridColor, depthTest);
+
+        z += scale_;
+    }
+
+}
+
+void DebugRenderer::CreateZAxisLines(unsigned gridColor, bool depthTest, int x, int y, int z)
+{
+    for (int j = 0; j < numGridLines_; j++)
+    {
+        position1_ = Vector3(x - offset_, y, z);
+        position2_ = Vector3(x - offset_, y, position1_.z_ + lineLength_);
+        position3_ = Vector3(x - offset_, y, position1_.z_ + -lineLength_);
+
+        AddLine(position1_, position2_, gridColor, depthTest);
+        AddLine(position3_, position1_, gridColor, depthTest);
+
+        x += scale_;
+    }
+}
+
+void DebugRenderer::CreateGrid(const Color& grid, bool depthTest, Vector3 position)
+{
+    unsigned gridColor = grid.ToUInt();
+
+    scale_ = position.y_ / scaleIncrement_;
+
+    if (position.y_ < scaleIncrement_)
+        scale_ = 1;
+
+    lineLength_ = (numGridLines_ / 2) * scale_;
+    offset_ = (numGridLines_ / 2) * scale_;
+
+    CreateXAxisLines(gridColor, depthTest, 0, 0, 0);
+    CreateZAxisLines(gridColor, depthTest, 0, 0, 0);
+}
+
+// ATOMIC END
 
 }

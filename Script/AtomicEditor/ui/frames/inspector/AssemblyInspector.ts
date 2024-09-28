@@ -1,12 +1,26 @@
 //
-// Copyright (c) 2014-2015, THUNDERBEAST GAMES LLC All rights reserved
-// LICENSE: Atomic Game Engine Editor and Tools EULA
-// Please see LICENSE_ATOMIC_EDITOR_AND_TOOLS.md in repository root for
-// license information: https://github.com/AtomicGameEngine/AtomicGameEngine
+// Copyright (c) 2014-2016 THUNDERBEAST GAMES LLC
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 //
 
 import InspectorWidget = require("./InspectorWidget");
-import ArrayEditWidget = require("./ArrayEditWidget");
 import InspectorUtils = require("./InspectorUtils");
 
 class AssemblyInspector extends InspectorWidget {
@@ -15,7 +29,7 @@ class AssemblyInspector extends InspectorWidget {
 
         super();
 
-        this.subscribeToEvent(this, "WidgetEvent", (data) => this.handleWidgetEvent(data));
+        this.subscribeToEvent(this, Atomic.UIWidgetEvent((data) => this.handleWidgetEvent(data)));
 
     }
 
@@ -36,23 +50,22 @@ class AssemblyInspector extends InspectorWidget {
         // Assembly Section
         var assemblyLayout = this.createSection(rootLayout, "NETAssembly", 1);
 
-        var assemblyFile = <AtomicNET.CSComponentAssembly> asset.importer.getResource();
+        var assemblyFile = <AtomicNETScript.CSComponentAssembly> asset.importer.getResource();
 
         var container = InspectorUtils.createContainer();
-        container.gravity = Atomic.UI_GRAVITY_ALL;
+        container.gravity = Atomic.UI_GRAVITY.UI_GRAVITY_ALL;
         assemblyLayout.addChild(container);
 
         var panel = new Atomic.UILayout();
-        panel.axis = Atomic.UI_AXIS_Y;
-        panel.layoutSize = Atomic.UI_LAYOUT_SIZE_PREFERRED;
-        panel.layoutPosition = Atomic.UI_LAYOUT_POSITION_LEFT_TOP;
+        panel.axis = Atomic.UI_AXIS.UI_AXIS_Y;
+        panel.layoutSize = Atomic.UI_LAYOUT_SIZE.UI_LAYOUT_SIZE_PREFERRED;
+        panel.layoutPosition = Atomic.UI_LAYOUT_POSITION.UI_LAYOUT_POSITION_LEFT_TOP;
         container.addChild(panel);
 
         var label = InspectorUtils.createAttrName("CSComponents:");
         panel.addChild(label);
 
-        for (var index in assemblyFile.classNames)
-        {
+        for (var index in assemblyFile.classNames) {
             var classname = assemblyFile.classNames[index];
 
             label = InspectorUtils.createAttrName(classname);

@@ -43,15 +43,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <vector>
 #include <map>
-#include "../include/assimp/types.h"
-#include "../include/assimp/mesh.h"
+#include <assimp/types.h>
+#include <assimp/mesh.h>
 
-namespace Assimp
-{
+namespace Assimp {
+namespace ObjFile {
 
-namespace ObjFile
-{
-// ------------------------------------------------------------------------------------------------
 struct Object;
 struct Face;
 struct Material;
@@ -159,6 +156,7 @@ struct Material
     aiString textureEmissive;
     aiString textureBump;
     aiString textureNormal;
+    aiString textureReflection[6];
     aiString textureSpecularity;
     aiString textureOpacity;
     aiString textureDisp;
@@ -170,6 +168,13 @@ struct Material
         TextureEmissiveType,
         TextureBumpType,
         TextureNormalType,
+        TextureReflectionSphereType,
+        TextureReflectionCubeTopType,
+        TextureReflectionCubeBottomType,
+        TextureReflectionCubeFrontType,
+        TextureReflectionCubeBackType,
+        TextureReflectionCubeLeftType,
+        TextureReflectionCubeRightType,
         TextureSpecularityType,
         TextureOpacityType,
         TextureDispType,
@@ -219,10 +224,10 @@ struct Material
 // ------------------------------------------------------------------------------------------------
 //! \struct Mesh
 //! \brief  Data structure to store a mesh
-struct Mesh
-{
+struct Mesh {
     static const unsigned int NoMaterial = ~0u;
-
+    /// The name for the mesh
+    std::string m_name;
     /// Array with pointer to all stored faces
     std::vector<Face*> m_Faces;
     /// Assigned material
@@ -235,13 +240,14 @@ struct Mesh
     unsigned int m_uiMaterialIndex;
     /// True, if normals are stored.
     bool m_hasNormals;
+
     /// Constructor
-    Mesh() :
-        m_pMaterial(NULL),
-        m_uiNumIndices(0),
-        m_uiMaterialIndex( NoMaterial ),
-        m_hasNormals(false)
-    {
+    explicit Mesh( const std::string &name ) 
+    : m_name( name )
+    , m_pMaterial(NULL)
+    , m_uiNumIndices(0)
+    , m_uiMaterialIndex( NoMaterial )
+    , m_hasNormals(false) {
         memset(m_uiUVCoordinates, 0, sizeof( unsigned int ) * AI_MAX_NUMBER_OF_TEXTURECOORDS);
     }
 

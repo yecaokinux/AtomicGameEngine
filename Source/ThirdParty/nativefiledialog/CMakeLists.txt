@@ -2,12 +2,12 @@
 set (SOURCE_FILES nfd_common.c nfd.h)
 
 if (APPLE)
-    set (SOURCE_FILES ${SOURCE_FILES} nfd_cocoa.mm )
+    set (SOURCE_FILES ${SOURCE_FILES} nfd_cocoa.m )
 endif( APPLE)
 
-if (MSVC)
+if (WIN32)
     set (SOURCE_FILES ${SOURCE_FILES} nfd_win.cpp )
-endif( MSVC)
+endif( WIN32)
 
 if (LINUX)
     set (SOURCE_FILES ${SOURCE_FILES} nfd_gtk.c )    
@@ -19,3 +19,4 @@ endif(LINUX)
 
 
 add_library(nativefiledialog ${SOURCE_FILES})
+target_include_directories(nativefiledialog PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
